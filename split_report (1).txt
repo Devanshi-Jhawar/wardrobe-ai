@@ -1,0 +1,89 @@
+Fashion dataset v3 split report
+Source: /Users/devanshi.jhawar/Desktop/wardrobe-ai/clothing-by-category/fashion_dataset_v2
+Total images: 11268
+Split method: multilabel stratification, random seeds 42 and 43
+Target proportions: 80% train, 10% valid, 10% test
+
+TRAIN: 9015 images (80.0%)
+Class             Images  Objects
+Anarkali             103      105
+Bag                 3263     3285
+Blazer               290      292
+Dress                160      160
+Dupatta               95      103
+Hoodie               428      436
+Jacket              1386     2143
+Jeans                160      160
+Jewellery            257      262
+Kameez                20       20
+Kurta                  1        1
+Kurti                220      221
+Lehenga              101      106
+Maxi                 195      198
+Saree                419      422
+Shalwar                8        8
+Sharara              101      101
+Sherwani             261      270
+Shirt                268      465
+Shoes                234      236
+Skirt                501      509
+Slippers             183      183
+Sunglasses           123      123
+T-Shirt              274      346
+Classes absent from this split: none
+
+VALID: 1126 images (10.0%)
+Class             Images  Objects
+Anarkali              13       13
+Bag                  408      409
+Blazer                36       36
+Dress                 20       20
+Dupatta               12       12
+Hoodie                53       53
+Jacket               173      261
+Jeans                 20       20
+Jewellery             32       33
+Kameez                 2        2
+Kurta                  0        0
+Kurti                 28       28
+Lehenga               13       13
+Maxi                  24       24
+Saree                 52       53
+Shalwar                1        1
+Sharara               13       13
+Sherwani              33       35
+Shirt                 33      114
+Shoes                 29       29
+Skirt                 63       64
+Slippers              23       23
+Sunglasses            15       15
+T-Shirt               34       49
+Classes absent from this split: Kurta
+
+TEST: 1127 images (10.0%)
+Class             Images  Objects
+Anarkali              13       13
+Bag                  408      409
+Blazer                36       37
+Dress                 20       20
+Dupatta               12       12
+Hoodie                54       54
+Jacket               173      251
+Jeans                 20       20
+Jewellery             32       32
+Kameez                 3        3
+Kurta                  0        0
+Kurti                 28       28
+Lehenga               13       13
+Maxi                  24       24
+Saree                 52       54
+Shalwar                1        1
+Sharara               13       14
+Sherwani              33       33
+Shirt                 33      104
+Shoes                 29       31
+Skirt                 63       64
+Slippers              23       23
+Sunglasses            15       15
+T-Shirt               34       54
+Classes absent from this split: Kurta
