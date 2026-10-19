@@ -5,3 +5,7 @@ node_modules/
 .env
 *.pyc
 .ipynb_checkpoints/
+
+# wardrobe service dev artifacts
+*.db
+services/wardrobe/storage/
