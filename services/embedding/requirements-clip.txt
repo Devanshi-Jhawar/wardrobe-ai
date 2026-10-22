@@ -1,0 +1,9 @@
+# Optional: real semantic + text-searchable embeddings via CLIP.
+# Install ON TOP of requirements.txt to enable the "clip" backend:
+#   pip install -r requirements.txt -r requirements-clip.txt
+#
+# Heavy (~2 GB with torch) and needs a one-time model download on first run.
+# torch may not have wheels for very new Python versions yet; if install fails,
+# use a Python 3.11/3.12 venv for this service.
+open_clip_torch>=2.24
+torch>=2.2

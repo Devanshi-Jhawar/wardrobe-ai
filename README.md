@@ -9,8 +9,8 @@ The project is built as small, independent services (phase 1):
 | # | Service | Job | Status |
 |---|---------|-----|--------|
 | 1 | **Wardrobe** | Stores your clothes (the digital closet) + CRUD | ✅ built |
-| 2 | Vision | Looks at a photo and labels the garment (color, type…) | ⬜ next |
-| 3 | Embedding | Turns a photo into a vector for similarity search | ⬜ |
+| 2 | Vision | Looks at a photo and labels the garment (color, type…) | 🚧 in progress |
+| 3 | **Embedding** | Turns a photo into a vector for similarity search | ✅ built |
 | 4 | Weather | Fetches the forecast for a place | ⬜ |
 
 ---
@@ -61,3 +61,26 @@ Full details and examples: [`services/wardrobe/README.md`](services/wardrobe/REA
 > Note: until the Vision service exists, uploads don't auto-detect the garment.
 > You can add details manually via the `attributes_json` field, or leave them
 > blank and the item is saved as `pending`.
+
+---
+
+## Block 3: Embedding service
+
+Turns a clothing photo into a **vector** (list of numbers) so the app can find
+similar items — the engine behind the wardrobe's `/search`. Independent of the
+vision service. Ships with a lightweight color-based backend that runs with no
+model download, and an optional CLIP backend for real semantic + text search.
+
+### Run it after cloning
+
+```bash
+cd services/embedding
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8003
+```
+
+Then open **http://127.0.0.1:8003/docs**.
+
+Full details, backends, and how to enable CLIP: [`services/embedding/README.md`](services/embedding/README.md).
