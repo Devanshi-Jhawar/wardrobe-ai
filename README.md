@@ -9,9 +9,9 @@ The project is built as small, independent services (phase 1):
 | # | Service | Job | Status |
 |---|---------|-----|--------|
 | 1 | **Wardrobe** | Stores your clothes (the digital closet) + CRUD | ✅ built |
-| 2 | Vision | Looks at a photo and labels the garment (color, type…) | 🚧 in progress |
+| 2 | **Vision** | Looks at a photo and labels the garment (color, type…) | ✅ built |
 | 3 | **Embedding** | Turns a photo into a vector for similarity search | ✅ built |
-| 4 | Weather | Fetches the forecast for a place | ⬜ |
+| 4 | **Weather** | Fetches the forecast and says what clothes each day needs | ✅ built |
 
 ---
 
@@ -84,3 +84,54 @@ uvicorn app.main:app --reload --port 8003
 Then open **http://127.0.0.1:8003/docs**.
 
 Full details, backends, and how to enable CLIP: [`services/embedding/README.md`](services/embedding/README.md).
+
+---
+
+## Block 2: Vision service
+
+Looks at a clothing photo and returns `category` (one of the 23 YOLO classes),
+`color`, `pattern`, `material`, `style`, `occasion` and `season`, which are the fields
+the wardrobe stores. It runs the YOLO model in `runs/detect/train-2/weights/best.pt`.
+
+### Run it after cloning
+
+```bash
+git lfs pull                    # gets the real best.pt (19 MB)
+cd services/vision
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8002
+```
+
+Then open **http://127.0.0.1:8002/docs**. To have uploads tagged automatically,
+start vision (8002) and embedding (8003), set `ENABLE_ENRICHMENT=true` in
+`services/wardrobe/.env`, and restart the wardrobe.
+
+Full details and known model weak spots: [`services/vision/README.md`](services/vision/README.md).
+
+---
+
+## Block 4: Weather service
+
+Gives the forecast for a city or dates (free Open-Meteo data, no key) and, for each
+day, what kind of clothing it needs: warmth, types and materials to prefer or
+avoid, waterproof, evening layer, accessories. It doesn't pick clothes itself;
+`outfit_demo.py` shows how that's matched against the wardrobe.
+
+### Run it after cloning
+
+```bash
+cd services/weather
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8004
+```
+
+Then open **http://127.0.0.1:8004/docs**. With the wardrobe running:
+
+```bash
+python check_compat.py u1            # checks wardrobe and weather still fit
+python outfit_demo.py Goa --user u1  # an outfit per day from u1's clothes
+```
+
+Full explanation: [`services/weather/GUIDE.md`](services/weather/GUIDE.md).
