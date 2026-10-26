@@ -1,11 +1,23 @@
-﻿venv/
-.venv/
+﻿# Python
 __pycache__/
-node_modules/
-.env
-*.pyc
+*.py[cod]
+.venv/
+venv/
 .ipynb_checkpoints/
+*.egg-info/
+.pytest_cache/
 
-# wardrobe service dev artifacts
+# Environment / secrets
+.env
+
+# Node
+node_modules/
+
+# Service dev artifacts (local SQLite DB + uploaded images)
 *.db
-services/wardrobe/storage/
+services/*/storage/
+
+# OS / archive junk (not part of the dataset)
+.DS_Store
+__MACOSX/
+Thumbs.db
