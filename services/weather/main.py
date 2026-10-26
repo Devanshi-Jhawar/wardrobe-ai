@@ -9,6 +9,13 @@ FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 MAX_DAYS_AHEAD = 16  # Open-Meteo only forecasts this far ahead
 
+# Places the open geocoder resolves poorly. Goa is an Indian state, not a city,
+# so the geocoder has no "Goa" in India and fuzzy-matches "Genoa, Italy" instead.
+# Coordinates match this service's own default lat/lon.
+CITY_OVERRIDES = {
+    "goa": (15.2993, 74.1240, "Goa, India"),
+}
+
 
 @app.get("/health")
 def health():
@@ -31,12 +38,24 @@ def call_open_meteo(url, params):
 
 
 def find_city(name):
-    """Turn a city name like 'Goa' into coordinates."""
-    data = call_open_meteo(GEOCODE_URL, {"name": name, "count": 1})
-    if not data.get("results"):
+    """Turn a city name like 'Goa' into coordinates.
+
+    Prefers an exact (case-insensitive) name match over the geocoder's first
+    fuzzy result, then the most populated, so 'Goa' is never silently turned
+    into 'Genoa'. A few known-tricky names are handled by CITY_OVERRIDES.
+    """
+    key = name.strip().lower()
+    if key in CITY_OVERRIDES:
+        return CITY_OVERRIDES[key]
+
+    data = call_open_meteo(GEOCODE_URL, {"name": name, "count": 10})
+    results = data.get("results")
+    if not results:
         raise HTTPException(404, f"Could not find a place called '{name}'.")
-    place = data["results"][0]
-    return place["latitude"], place["longitude"], f"{place['name']}, {place.get('country', '')}".strip(", ")
+
+    exact = [r for r in results if r.get("name", "").lower() == key]
+    best = max(exact or results, key=lambda r: r.get("population") or 0)
+    return best["latitude"], best["longitude"], f"{best['name']}, {best.get('country', '')}".strip(", ")
 
 
 def temperature_label(high):
