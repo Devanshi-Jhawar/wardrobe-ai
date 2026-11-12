@@ -12,6 +12,7 @@ The project is built as small, independent services (phase 1):
 | 2 | **Vision** | Looks at a photo and labels the garment (color, type…) | ✅ built |
 | 3 | **Embedding** | Turns a photo into a vector for similarity search | ✅ built |
 | 4 | **Weather** | Fetches the forecast and says what clothes each day needs | ✅ built |
+| 5 | **Memory** | Remembers likes, dislikes, what you wore when, and feedback | ✅ built |
 
 ---
 
@@ -135,3 +136,25 @@ python outfit_demo.py Goa --user u1  # an outfit per day from u1's clothes
 ```
 
 Full explanation: [`services/weather/GUIDE.md`](services/weather/GUIDE.md).
+
+---
+
+## Block 5: Memory service
+
+The agents' notebook. Stores each user's likes and dislikes, which outfit they
+wore on which day, and thumbs up / down on items. `GET /memory/{user_id}`
+returns it all in one call, including `recently_worn_item_ids` so outfits don't
+repeat within `avoid_repeat_days` (3 by default). Item ids are the wardrobe's.
+
+### Run it after cloning
+
+```bash
+cd services/memory
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8006
+```
+
+Then open **http://127.0.0.1:8006/docs**. Set `SYNC_WARDROBE_WEAR=true` to also
+bump the wardrobe's `wear_count` whenever an outfit is recorded.
+
+Full explanation: [`services/memory/README.md`](services/memory/README.md).
