@@ -3,6 +3,7 @@
 This is the node that actually *uses the other services*. It reads the
 structured request the planner produced and fills the State with:
   - wardrobe_items : the user's clothes                     (wardrobe service)
+  - search_scores  : how well each item matches the request (embedding + wardrobe search)
   - weather        : forecast + clothing needs for the days (weather service)
   - prefs          : likes, dislikes, feedback, recent wears (memory service)
 
@@ -69,23 +70,32 @@ def _clip_to_forecast(start: date, days: int, today: date) -> tuple[date, int]:
 
 def gather(state: OutfitState) -> dict:
     user_id = state.get("user_id") or "demo"
-    query = state.get("query") or ""
+    search_text = state.get("search_text")
     city = state.get("city")
 
     today = date.today()
     start, days = _clip_to_forecast(*date_window(state.get("dates") or {}, today), today)
 
-    # Wardrobe: prefer semantic search when there's a descriptive query,
-    # otherwise just list everything the user owns.
-    items = clients.search_wardrobe(user_id, query) if query else []
-    if not items:
-        items = clients.fetch_wardrobe(user_id)
+    # Wardrobe: always the full list, so every slot has candidates.
+    items = clients.fetch_wardrobe(user_id)
+
+    # Semantic search ranks those items against what the user said about the
+    # clothes ("red saree"; the planner strips occasion/city/date/filler words,
+    # so a generic question doesn't search at all). It only boosts scores — it
+    # never hides items. Needs the CLIP backend; with the default color
+    # backend embed_text() is None and we skip it.
+    search_scores: dict[str, float] = {}
+    if search_text and items:
+        vec = clients.embed_text(search_text)
+        if vec:
+            search_scores = clients.search_wardrobe(user_id, vec, k=len(items))
 
     weather = clients.fetch_weather(city, days=days, start_date=start) if days else None
     prefs = prefs_mod.from_memory(clients.fetch_memory(user_id))
 
     return {
         "wardrobe_items": items,
+        "search_scores": search_scores,
         "weather": weather,
         "prefs": prefs,
     }

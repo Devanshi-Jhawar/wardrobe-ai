@@ -67,6 +67,10 @@ def agent(req: AgentRequest):
             "attempts": state.get("attempts"),
             "critic_notes": state.get("critic_notes"),
             "wardrobe_count": len(state.get("wardrobe_items") or []),
+            # What was searched for, and how many items CLIP ranked
+            # (0 = CLIP search off: color backend, no vectors, or nothing to search).
+            "search_text": state.get("search_text"),
+            "search_matches": len(state.get("search_scores") or {}),
         },
     }
 

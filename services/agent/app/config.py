@@ -11,12 +11,14 @@ AGENT_PORT = int(os.getenv("AGENT_PORT", "8000"))
 # --- the Phase-1 services the agent orchestrates ---
 WARDROBE_URL = os.getenv("WARDROBE_URL", "http://localhost:8001")
 VISION_URL   = os.getenv("VISION_URL",   "http://localhost:8002")   # used indirectly, via wardrobe
-EMBED_URL    = os.getenv("EMBED_URL",    "http://localhost:8003")   # used indirectly, via wardrobe
+EMBED_URL    = os.getenv("EMBED_URL",    "http://localhost:8003")   # text -> vector for search (CLIP)
 WEATHER_URL  = os.getenv("WEATHER_URL",  "http://localhost:8004")
 MEMORY_URL   = os.getenv("MEMORY_URL",   "http://localhost:8006")   # likes, dislikes, wear history
 
 # How long to wait on any one service before giving up (seconds).
 HTTP_TIMEOUT = float(os.getenv("AGENT_HTTP_TIMEOUT", "10"))
+# Text embedding can be slow the first time CLIP runs on CPU.
+EMBED_TIMEOUT = float(os.getenv("AGENT_EMBED_TIMEOUT", "30"))
 
 # "rules" = no LLM, runs with no API key (current). "llm" = use a model (later).
 MODE = os.getenv("AGENT_MODE", "rules")

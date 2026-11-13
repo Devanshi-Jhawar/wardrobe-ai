@@ -45,7 +45,7 @@ def from_memory(memory: dict | None) -> dict:
     }
 
 
-def _haystack(item: dict) -> str:
+def haystack(item: dict) -> str:
     """The item's describable fields as one lowercase string."""
     parts: list[str] = []
     for key in ("category", "style", "pattern", "material"):
@@ -61,7 +61,7 @@ def _haystack(item: dict) -> str:
     return " ".join(parts)
 
 
-def _word_hits(words: list[str], hay: str) -> bool:
+def word_hits(words: list[str], hay: str) -> bool:
     for w in words:
         if not w:
             continue
@@ -79,7 +79,7 @@ def is_disliked(prefs: dict | None, item: dict) -> bool:
     prefs = prefs or {}
     if item.get("id") and item["id"] in (prefs.get("disliked_item_ids") or []):
         return True
-    return _word_hits(prefs.get("dislikes") or [], _haystack(item))
+    return word_hits(prefs.get("dislikes") or [], haystack(item))
 
 
 def is_liked(prefs: dict | None, item: dict) -> bool:
@@ -87,7 +87,7 @@ def is_liked(prefs: dict | None, item: dict) -> bool:
     prefs = prefs or {}
     if item.get("id") and item["id"] in (prefs.get("liked_item_ids") or []):
         return True
-    return _word_hits(prefs.get("likes") or [], _haystack(item))
+    return word_hits(prefs.get("likes") or [], haystack(item))
 
 
 def recently_worn(prefs: dict | None, item: dict) -> bool:

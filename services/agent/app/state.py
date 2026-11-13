@@ -18,9 +18,11 @@ class OutfitState(TypedDict, total=False):
     city: str | None           # e.g. "Goa" (None if not mentioned)
     dates: dict                # {"relative": "tomorrow"} or {"count": 4}
     preference: str | None     # for save_preference, e.g. "frocks"
+    search_text: str | None    # what the user said about the clothes, e.g. "red saree"
 
     # --- written by: gather ---
     wardrobe_items: list[dict]
+    search_scores: dict        # {item_id: cosine score}; empty if search unavailable
     weather: dict | None
     prefs: dict | None         # likes/dislikes/feedback/recent wears (see prefs.py)
 

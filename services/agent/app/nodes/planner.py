@@ -34,6 +34,21 @@ GAP_TRIGGERS = ["should i buy", "what to buy", "need to buy", "shopping",
 
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
+# Words that carry no description of the clothes themselves. Whatever is left
+# after removing these (and the occasion, city and date words) is what the user
+# said about the garments — "red saree", "white t-shirt", "ethnic" — and that is
+# what gets searched. "What should I wear to office tomorrow?" leaves nothing.
+FILLER_WORDS = set("""
+a an the and or but of to in on at for from with without by into my me i i'm im you your we our
+it its this that these those is am are was were be been being do does did can could should would will
+shall may might must what which who whom how when where why wear wearing wore put go going get got
+want wanna like need suggest suggestion recommend recommendation give show tell help please pick choose
+outfit outfits look looks clothes clothing something anything some any thing things one ones today
+tonight tomorrow weekend week next day days morning evening night trip travel traveling travelling
+vacation holiday visiting visit packing pack plan planning ideas idea good nice best new also just
+really maybe so very too
+""".split())
+
 
 def _detect_intent(q: str) -> str:
     if any(t in q for t in PREF_TRIGGERS):
@@ -82,6 +97,20 @@ def _detect_city(q_raw: str) -> str | None:
     return None
 
 
+def _search_text(q: str, city: str | None) -> str | None:
+    """The descriptive part of the request, for wardrobe search (or None)."""
+    skip = set(FILLER_WORDS) | set(WEEKDAYS)
+    for words in OCCASION_KEYWORDS.values():
+        for w in words:
+            skip.update(w.split())
+    skip.update(OCCASION_KEYWORDS)
+    if city:
+        skip.add(city.lower())
+    tokens = re.findall(r"[a-z][a-z'-]*", q)
+    kept = [t for t in tokens if t not in skip and len(t) > 1]
+    return " ".join(kept) or None
+
+
 def _extract_preference(q_raw: str, q: str) -> str | None:
     for t in PREF_TRIGGERS:
         idx = q.find(t)
@@ -108,4 +137,5 @@ def planner(state: OutfitState) -> dict:
     updates["occasion"] = _detect_occasion(q)
     updates["city"] = _detect_city(q_raw)
     updates["dates"] = _detect_dates(q)
+    updates["search_text"] = _search_text(q, updates["city"])
     return updates

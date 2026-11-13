@@ -28,19 +28,43 @@ def fetch_wardrobe(user_id: str, limit: int = 200) -> list[dict]:
         return []
 
 
-def search_wardrobe(user_id: str, query: str, top_k: int = 20) -> list[dict]:
-    """Semantic search over the wardrobe (used when we have a text query)."""
+def embed_text(text: str) -> list[float] | None:
+    """Text -> vector via the embedding service, in the same space as item photos.
+
+    Only the `clip` backend can embed text; the default `color` backend answers
+    501, and then (or if the service is down) this returns None and the agent
+    simply ranks without search.
+    """
+    if not text.strip():
+        return None
+    try:
+        r = httpx.post(f"{config.EMBED_URL}/embed/text", json={"text": text},
+                       timeout=config.EMBED_TIMEOUT)
+        r.raise_for_status()
+        vec = r.json().get("embedding")
+        return vec if isinstance(vec, list) and vec else None
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+def search_wardrobe(user_id: str, embedding: list[float], k: int = 200) -> dict[str, float]:
+    """Nearest-neighbour search over the user's item photos.
+
+    Returns {item_id: cosine score}. Only items that have a stored embedding
+    appear. Empty dict if the wardrobe is down or nothing matches.
+    """
     try:
         r = httpx.post(
             f"{config.WARDROBE_URL}/wardrobe/search",
-            json={"user_id": user_id, "query": query, "top_k": top_k},
+            json={"user_id": user_id, "embedding": embedding, "k": k},
             timeout=config.HTTP_TIMEOUT,
         )
         r.raise_for_status()
-        data = r.json()
-        return data.get("results", data.get("items", [])) if isinstance(data, dict) else data
-    except (httpx.HTTPError, ValueError):
-        return []
+        hits = r.json().get("hits") or []
+        return {h["item"]["id"]: float(h["score"]) for h in hits
+                if isinstance(h, dict) and (h.get("item") or {}).get("id")}
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return {}
 
 
 def fetch_weather(city: str | None, days: int = 1, start_date: date | None = None) -> dict | None:
