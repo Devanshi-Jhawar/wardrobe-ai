@@ -25,8 +25,13 @@ OCCASION_KEYWORDS = {
 }
 
 # Phrases that flip the whole request into a different intent.
+# Dislikes are checked first: "I don't like X" also contains "like".
 PREF_TRIGGERS = ["don't like", "dont like", "do not like", "dislike", "hate",
-                 "not a fan of", "i avoid", "never wear", "don't wear", "dont wear"]
+                 "not a fan of", "i avoid", "never wear", "don't wear", "dont wear",
+                 "don't want", "dont want", "can't stand", "cant stand"]
+LIKE_TRIGGERS = ["i like", "i love", "i prefer", "i really like", "i really love",
+                 "i'm a fan of", "im a fan of", "big fan of", "my favourite", "my favorite",
+                 "i enjoy wearing", "love wearing", "like wearing"]
 TRIP_TRIGGERS = ["trip", "travel", "traveling", "travelling", "vacation",
                  "holiday", "visiting", "packing", "pack for"]
 GAP_TRIGGERS = ["should i buy", "what to buy", "need to buy", "shopping",
@@ -51,7 +56,7 @@ really maybe so very too
 
 
 def _detect_intent(q: str) -> str:
-    if any(t in q for t in PREF_TRIGGERS):
+    if any(t in q for t in PREF_TRIGGERS) or any(t in q for t in LIKE_TRIGGERS):
         return "save_preference"
     if any(t in q for t in GAP_TRIGGERS):
         return "gap"
@@ -111,13 +116,32 @@ def _search_text(q: str, city: str | None) -> str | None:
     return " ".join(kept) or None
 
 
-def _extract_preference(q_raw: str, q: str) -> str | None:
-    for t in PREF_TRIGGERS:
-        idx = q.find(t)
-        if idx != -1:
-            tail = q_raw[idx + len(t):].strip(" .!?,")
-            return tail or None
-    return None
+# Extra words that say nothing about *which* clothes ("I love wearing blue colours").
+_PREF_FILLER = FILLER_WORDS | {"colour", "colours", "color", "colors", "stuff", "much",
+                               "lot", "lots", "kind", "kinds", "type", "types", "style",
+                               "styles", "all", "any", "ever", "anymore", "them", "those"}
+
+
+def _extract_preferences(q: str) -> tuple[str | None, list[str]]:
+    """("dislike" | "like", ["yellow", "orange"]) from a preference statement.
+
+    "I don't like yellow and orange" -> ("dislike", ["yellow", "orange"])
+    "I love wearing ethnic clothes"  -> ("like", ["ethnic"])
+    Dislike phrases are checked first, since "don't like" contains "like".
+    """
+    for kind, triggers in (("dislike", PREF_TRIGGERS), ("like", LIKE_TRIGGERS)):
+        hits = [(q.find(t), t) for t in triggers if t in q]
+        if not hits:
+            continue
+        idx, t = min(hits)
+        tail = q[idx + len(t):]
+        things = []
+        for part in re.split(r",|\band\b|\bor\b|/|&", tail):
+            words = [w for w in re.findall(r"[a-z][a-z'-]*", part) if w not in _PREF_FILLER]
+            if words:
+                things.append(" ".join(words))
+        return kind, things
+    return None, []
 
 
 def planner(state: OutfitState) -> dict:
@@ -128,10 +152,13 @@ def planner(state: OutfitState) -> dict:
     intent = _detect_intent(q)
     updates: dict = {"intent": intent}
 
-    # A preference statement ("I don't like frocks") isn't an outfit request;
-    # capture what to remember and let the graph route it to memory.
+    # A preference statement ("I don't like frocks", "I love blue") isn't an
+    # outfit request; capture what to remember and let the graph route it to memory.
     if intent == "save_preference":
-        updates["preference"] = _extract_preference(q_raw, q)
+        kind, things = _extract_preferences(q)
+        updates["preference_kind"] = kind
+        updates["preferences"] = things
+        updates["preference"] = ", ".join(things) or None
         return updates
 
     updates["occasion"] = _detect_occasion(q)

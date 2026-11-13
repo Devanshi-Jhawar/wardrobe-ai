@@ -20,10 +20,10 @@ planner ─► (preference?) ─► remember ─► answer
 |------|------|
 | `planner`  | Reads the sentence → intent (recommend/trip/gap/save_preference), occasion, city, dates, and the words describing the clothes (for search). |
 | `gather`   | Calls **wardrobe**, **weather** (for the asked-about dates) and **memory** (likes, dislikes, feedback, recent wears); ranks item photos via **embedding** + wardrobe search when CLIP is on. |
-| `composer` | Picks one item per slot (top/bottom/footwear, +layer if cold, or a onepiece). Skips disliked and recently-worn items, prefers liked ones. |
+| `composer` | Picks one item per slot (top/bottom/footwear, +layer if cold, or a onepiece), then accessories. Uses the weather's advice, skips disliked and recently-worn items, prefers liked ones. Trips: one outfit per day. |
 | `critic`   | Checks completeness + occasion fit. Fails → loops back to `composer` (max 3). |
 | `gap`      | Flags slots the wardrobe can't fill and suggests what to buy. |
-| `remember` | Saves a dislike ("no frocks") to the **memory** service. |
+| `remember` | Saves likes / dislikes ("no frocks", "I love blue") to the **memory** service. |
 | `answer`   | Shapes the final human-readable + structured reply. |
 
 `planner` and `composer` are **rules-based** today (no API key needed). Their
@@ -41,13 +41,54 @@ Needs the wardrobe (8001), weather (8004) and memory (8006) services for full
 answers, but degrades gracefully (thinner answers) if they're down. Without
 memory it can't remember dislikes and says so.
 
-## Weather and dates
+## Clothing vocabulary (`app/slots.py`)
+
+Vision tags uploads with its model's 23 classes (`data.yaml`), weather speaks
+its own words (`TYPES` in `weather/main.py`), and users can type anything.
+`slots.py` maps every vision class to an outfit slot and to the weather's
+words; hand-typed categories ("Kurtis", "Heels", "Palazzo pants") fall back to
+keywords. Ethnic wear: Kurti / Kameez / Sherwani are tops, Shalwar / Sharara
+bottoms, Anarkali / Maxi / Saree / Lehenga one-pieces, Dupatta an accessory.
+`tests/test_vocabulary.py` fails if a vision class or weather word is unmapped
+— add new classes to `CATEGORIES` when the model is retrained.
+
+Bottoms match the top's style when possible (kurti + sharara, t-shirt + jeans).
+
+## Weather, dates and trips
 
 The agent asks the weather service for the days the request is about —
 "tomorrow", "saturday", "this weekend", "next week", or "a 4-day trip" starting
-today — and reads each day's `label` (hot / mild / cold), `max`, `rainy` and
-`needs.layer_for_evening`. It adds a jacket only when a day is cold, and over
-several days packs for the coldest / rainiest one. Forecasts go 16 days ahead.
+today (forecasts go 16 days ahead) — and uses everything each day returns:
+
+- `label` (hot / mild / cold): a jacket only when cold; summer items when hot.
+- `needs.types_prefer` / `types_avoid`: e.g. sandals over boots when hot.
+  An item the weather advises against is used only if nothing else fits.
+- `needs.materials_prefer` / `materials_avoid`: linen when hot, wool when cold.
+- `rainy` + `needs.colors_avoid`: skips white, prefers quick-drying fabrics.
+- `needs.accessories`: sunglasses / cap / scarf / gloves are added from the
+  wardrobe when owned; the rest (sunscreen, umbrella) go in `carry`.
+
+Occasions add accessories too: jewellery and a bag for weddings, festivals and
+parties, a bag or watch for office; a dupatta goes with kurti / sharara looks.
+
+**Trips** ("packing for a 4-day trip to Shimla", "this weekend in Goa") get a
+plan per day, each against that day's forecast, plus a `packing_list` with
+each item once and a `carry` list. Clothes don't repeat across days unless
+nothing else suits — re-wearing shoes beats sandals in the cold. One outfit
+covering several days uses what every day allows.
+
+## Recording wears and ratings
+
+The agent only knows what you wore if you tell it:
+
+- **`POST /wear`** with the `item_ids` from an answer ("I'm wearing this"). Those
+  items are skipped for `avoid_repeat_days` (3 by default, set per user in
+  memory). Set `SYNC_WARDROBE_WEAR=true` in the memory service to also bump
+  the wardrobe's `wear_count`.
+- **`POST /rate`** — thumbs up / down on an outfit's ids or one item. Down:
+  never suggested again. Up: ranked higher.
+- **Likes and dislikes in chat:** "I love yellow and ethnic wear", "I don't
+  like heels or skirts". A newer statement replaces an older opposite one.
 
 ## Search ("I want to wear my red saree")
 
@@ -99,8 +140,29 @@ skipped unless nothing else fits the slot.
 | GET  | `/health`   | — | Agent status + which downstream services are reachable. |
 | POST | `/agent`    | `{query, user_id}` | Main entry — any request through the full graph. |
 | POST | `/outfit`   | `{occasion, city, when, user_id}` | Structured recommendation. |
-| POST | `/feedback` | `{dislike, user_id}` | Remember a preference directly. |
+| POST | `/wear`     | `{item_ids, user_id, worn_on?, occasion?, city?, note?}` | Log an outfit as worn. 400 for a future date, 503 if memory is down. |
+| POST | `/rate`     | `{item_ids, liked, user_id, reason?}` | Thumbs up / down. |
+| POST | `/feedback` | `{dislike?, like?, user_id}` | Remember a like / dislike word directly. |
 | GET  | `/wardrobe` | `?user_id=` | The user's wardrobe (proxied). |
+
+`/agent` answers have a `type`: `recommendation` (`outfit`, `item_ids`,
+`carry`, `suggestions`), `trip_plan` (`days[]` each with `outfit` +
+`item_ids`, `packing_list`, `carry`), `gap`, `preference_saved` /
+`preference_not_saved`.
+
+## Tests
+
+```bash
+cd services/agent
+pip install -r requirements-dev.txt
+python -m pytest                     # ~140 fast tests, no services needed
+AGENT_LIVE=1 python -m pytest tests/test_live.py   # against running wardrobe, weather, memory
+```
+
+The fast tests build weather replies with the weather service's real
+`clothing_needs()` and read the vision classes from the real `data.yaml`, so
+a change in either service shows up here. The live tests check the agent and
+each service still agree on their APIs (they create a random memory user).
 
 ## Config (env vars)
 

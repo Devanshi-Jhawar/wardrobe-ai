@@ -99,22 +99,70 @@ def fetch_memory(user_id: str) -> dict | None:
         return None
 
 
-def add_dislike(user_id: str, thing: str) -> dict | None:
-    """Append a dislike word to the user's preferences in the memory service.
+def save_preferences(user_id: str, things: list[str], kind: str = "dislike") -> dict | None:
+    """Add like / dislike words to the user's preferences in the memory service.
 
+    Liking something removes it from dislikes and vice versa, so the latest
+    statement wins ("I don't like blue" ... later "I love blue").
     Returns the saved preferences, or None if the memory service is down.
     Idempotent: a word already remembered isn't added twice.
     """
-    thing = (thing or "").strip().lower()
+    things = [t.strip().lower() for t in things if t and t.strip()]
+    add_to, remove_from = ("likes", "dislikes") if kind == "like" else ("dislikes", "likes")
     try:
         r = httpx.get(f"{config.MEMORY_URL}/memory/{user_id}/preferences",
                       timeout=config.HTTP_TIMEOUT)
         r.raise_for_status()
-        dislikes = [d.lower() for d in r.json().get("dislikes") or []]
-        if thing and thing not in dislikes:
-            dislikes.append(thing)
+        current = r.json()
+        target = [x.lower() for x in current.get(add_to) or []]
+        other = [x.lower() for x in current.get(remove_from) or []]
+        for t in things:
+            if t not in target:
+                target.append(t)
+        other = [x for x in other if x not in things]
         r = httpx.put(f"{config.MEMORY_URL}/memory/{user_id}/preferences",
-                      json={"dislikes": dislikes}, timeout=config.HTTP_TIMEOUT)
+                      json={add_to: target, remove_from: other}, timeout=config.HTTP_TIMEOUT)
+        r.raise_for_status()
+        return r.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+def add_dislike(user_id: str, thing: str) -> dict | None:
+    """Remember one dislike word (kept for callers that only dislike)."""
+    return save_preferences(user_id, [thing], "dislike")
+
+
+def record_worn(user_id: str, item_ids: list[str], worn_on: date | None = None,
+                occasion: str | None = None, city: str | None = None,
+                note: str | None = None) -> dict | None:
+    """Log an outfit as worn in the memory service (feeds "don't repeat").
+
+    Returns the saved entry, None if memory is down, or raises ValueError with
+    the service's message if it refused the entry (e.g. a future date).
+    """
+    body = {"item_ids": item_ids, "occasion": occasion, "city": city, "note": note}
+    if worn_on:
+        body["worn_on"] = worn_on.isoformat()
+    try:
+        r = httpx.post(f"{config.MEMORY_URL}/memory/{user_id}/worn", json=body,
+                       timeout=config.HTTP_TIMEOUT)
+    except httpx.HTTPError:
+        return None
+    if 400 <= r.status_code < 500:
+        raise ValueError(r.json().get("detail", "rejected by memory service"))
+    if r.status_code >= 500:
+        return None
+    return r.json()
+
+
+def rate_items(user_id: str, item_ids: list[str], liked: bool,
+               reason: str | None = None) -> dict | None:
+    """Thumbs up / down on items or a whole outfit (memory's /feedback)."""
+    try:
+        r = httpx.post(f"{config.MEMORY_URL}/memory/{user_id}/feedback",
+                       json={"item_ids": item_ids, "liked": liked, "reason": reason},
+                       timeout=config.HTTP_TIMEOUT)
         r.raise_for_status()
         return r.json()
     except (httpx.HTTPError, ValueError):

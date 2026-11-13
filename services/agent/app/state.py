@@ -17,7 +17,9 @@ class OutfitState(TypedDict, total=False):
     occasion: str | None       # office, party, wedding, festival, gym, date, casual
     city: str | None           # e.g. "Goa" (None if not mentioned)
     dates: dict                # {"relative": "tomorrow"} or {"count": 4}
-    preference: str | None     # for save_preference, e.g. "frocks"
+    preference: str | None     # for save_preference, readable: "yellow, orange"
+    preferences: list[str]     # the individual things: ["yellow", "orange"]
+    preference_kind: str | None  # "like" | "dislike"
     search_text: str | None    # what the user said about the clothes, e.g. "red saree"
 
     # --- written by: gather ---
