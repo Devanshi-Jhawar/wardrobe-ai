@@ -8,36 +8,33 @@ On a replay (critic said "try again"), `attempts` is higher, so the composer
 rotates to different candidates instead of picking the same ones forever.
 This rules version is swappable for an LLM composer later — same signature.
 """
-import json
-
-from .. import memory_store
-from ..slots import group_by_slot, CORE_SLOTS
+from .. import prefs as prefs_mod
+from ..slots import group_by_slot
 from ..state import OutfitState
 
 
 def _weather_signal(weather: dict | None) -> dict:
-    """Boil the weather payload down to cold / hot / rain flags + a temp."""
-    sig = {"cold": False, "hot": False, "rain": False, "temp": None}
-    if not weather:
+    """Boil the weather service's reply down to hot / cold / rain flags.
+
+    Reads the structured per-day fields the weather service returns
+    (`days[i].label`, `.max`, `.rainy`, `.needs.layer_for_evening`) so the
+    agent and the weather service agree on what "hot" and "cold" mean.
+    Over several days (a trip) a flag is set if *any* day needs it.
+    """
+    sig = {"cold": False, "hot": False, "rain": False, "evening_layer": False,
+           "temp": None, "temp_min": None}
+    days = (weather or {}).get("days") or []
+    if not days:
         return sig
-    blob = json.dumps(weather).lower()
-    # Pull any temperature-looking number to classify cold/hot.
-    temp = None
-    for key in ("temp", "temperature", "temp_max", "max_temp", "feels_like", "apparent"):
-        if key in weather and isinstance(weather[key], (int, float)):
-            temp = weather[key]
-            break
-    sig["temp"] = temp
-    if temp is not None:
-        sig["cold"] = temp < 16
-        sig["hot"] = temp > 30
-    # Keyword backup (the weather service emits rule-based needs text).
-    if any(w in blob for w in ("cold", "chilly", "jacket", "layer", "warm clothes", "winter")):
-        sig["cold"] = True
-    if any(w in blob for w in ("rain", "shower", "drizzle", "umbrella", "wet")):
-        sig["rain"] = True
-    if any(w in blob for w in ("hot", "heat", "sunny and warm", "summer")):
-        sig["hot"] = True
+    labels = [d.get("label") for d in days]
+    highs = [d["max"] for d in days if isinstance(d.get("max"), (int, float))]
+    sig["hot"] = "hot" in labels
+    sig["cold"] = "cold" in labels
+    sig["rain"] = any(d.get("rainy") for d in days)
+    sig["evening_layer"] = any((d.get("needs") or {}).get("layer_for_evening") for d in days)
+    if highs:
+        sig["temp"] = max(highs)          # warmest day's high
+        sig["temp_min"] = min(highs)      # coolest day's high (== temp for one day)
     return sig
 
 
@@ -52,7 +49,7 @@ def _matches_occasion(item: dict, occasion: str | None) -> bool:
     return False
 
 
-def _score(item: dict, occasion: str | None, sig: dict) -> int:
+def _score(item: dict, occasion: str | None, sig: dict, prefs: dict) -> int:
     """Higher = better fit. Used to order candidates for a slot."""
     s = 0
     if _matches_occasion(item, occasion):
@@ -62,18 +59,28 @@ def _score(item: dict, occasion: str | None, sig: dict) -> int:
         s += 3
     if sig["hot"] and "summer" in seasons:
         s += 3
+    if sig["hot"] and "winter" in seasons:
+        s -= 3
     if item.get("is_favorite"):
         s += 2
+    if prefs_mod.is_liked(prefs, item):
+        s += 4
     # Prefer less-worn items slightly, to vary suggestions over time.
     s -= min(int(item.get("wear_count") or 0), 3)
     return s
 
 
-def _pick(candidates: list[dict], occasion, sig, attempt: int) -> dict | None:
-    """Best candidate for a slot, rotated by `attempt` so replans differ."""
+def _pick(candidates: list[dict], occasion, sig, prefs: dict, attempt: int) -> dict | None:
+    """Best candidate for a slot, rotated by `attempt` so replans differ.
+
+    Items worn within the user's avoid_repeat_days are skipped — unless that
+    would leave the slot empty, in which case a repeat beats nothing.
+    """
     if not candidates:
         return None
-    ordered = sorted(candidates, key=lambda it: _score(it, occasion, sig), reverse=True)
+    fresh = [it for it in candidates if not prefs_mod.recently_worn(prefs, it)]
+    pool = fresh or candidates
+    ordered = sorted(pool, key=lambda it: _score(it, occasion, sig, prefs), reverse=True)
     return ordered[attempt % len(ordered)]
 
 
@@ -83,9 +90,9 @@ def composer(state: OutfitState) -> dict:
     prefs = state.get("prefs") or {}
     attempt = int(state.get("attempts") or 0)
 
-    # Drop anything the user has told us they dislike.
+    # Drop anything the user has told us they dislike (words or thumbs-down).
     items = [it for it in (state.get("wardrobe_items") or [])
-             if not memory_store.is_disliked(prefs, it)]
+             if not prefs_mod.is_disliked(prefs, it)]
     buckets = group_by_slot(items)
 
     chosen: list[dict] = []
@@ -93,9 +100,9 @@ def composer(state: OutfitState) -> dict:
     used_onepiece = False
 
     # A onepiece (dress/kurta set) can stand in for top+bottom.
-    onepiece = _pick(buckets.get("onepiece", []), occasion, sig, attempt)
-    bottom = _pick(buckets.get("bottom", []), occasion, sig, attempt)
-    top = _pick(buckets.get("top", []), occasion, sig, attempt)
+    onepiece = _pick(buckets.get("onepiece", []), occasion, sig, prefs, attempt)
+    bottom = _pick(buckets.get("bottom", []), occasion, sig, prefs, attempt)
+    top = _pick(buckets.get("top", []), occasion, sig, prefs, attempt)
 
     if onepiece and (not (top and bottom)):
         chosen.append(onepiece)
@@ -110,15 +117,15 @@ def composer(state: OutfitState) -> dict:
         else:
             missing.append("bottom")
 
-    footwear = _pick(buckets.get("footwear", []), occasion, sig, attempt)
+    footwear = _pick(buckets.get("footwear", []), occasion, sig, prefs, attempt)
     if footwear:
         chosen.append(footwear)
     else:
         missing.append("footwear")
 
-    # Add a layer when it's cold and we have one.
+    # A layer is part of the outfit only when it's actually cold.
     if sig["cold"]:
-        outer = _pick(buckets.get("outerwear", []), occasion, sig, attempt)
+        outer = _pick(buckets.get("outerwear", []), occasion, sig, prefs, attempt)
         if outer:
             chosen.append(outer)
         else:
@@ -126,11 +133,19 @@ def composer(state: OutfitState) -> dict:
 
     rationale_bits = []
     if occasion:
-        rationale_bits.append(f"for a {occasion} occasion")
+        article = "an" if occasion[0] in "aeiou" else "a"
+        rationale_bits.append(f"for {article} {occasion} occasion")
     if sig["temp"] is not None:
-        rationale_bits.append(f"~{sig['temp']}°")
+        if sig["temp_min"] is not None and sig["temp_min"] != sig["temp"]:
+            rationale_bits.append(f"highs {sig['temp_min']}–{sig['temp']}°C")
+        else:
+            rationale_bits.append(f"high of {sig['temp']}°C")
+    if sig["hot"]:
+        rationale_bits.append("hot, so keep it light")
     if sig["cold"]:
         rationale_bits.append("cold, so a layer helps")
+    elif sig["evening_layer"]:
+        rationale_bits.append("carry a light layer for the evening")
     if sig["rain"]:
         rationale_bits.append("rain likely")
 

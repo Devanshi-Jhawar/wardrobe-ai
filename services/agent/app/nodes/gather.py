@@ -2,32 +2,78 @@
 
 This is the node that actually *uses the other services*. It reads the
 structured request the planner produced and fills the State with:
-  - wardrobe_items : the user's clothes            (wardrobe service)
-  - weather        : forecast + clothing needs     (weather service)
-  - prefs          : remembered dislikes/notes      (local memory store)
+  - wardrobe_items : the user's clothes                     (wardrobe service)
+  - weather        : forecast + clothing needs for the days (weather service)
+  - prefs          : likes, dislikes, feedback, recent wears (memory service)
 
 It makes no decisions — it only fetches. If a service is down, its field
 comes back empty and the downstream nodes cope.
 """
-from .. import clients
-from .. import memory_store
+from datetime import date, timedelta
+
+from .. import clients, prefs as prefs_mod
 from ..state import OutfitState
 
+WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+MAX_FORECAST_DAYS = 16   # the weather service (Open-Meteo) only looks this far ahead
 
-def _days_from_dates(dates: dict) -> int:
+
+def date_window(dates: dict, today: date | None = None) -> tuple[date, int]:
+    """(first day, number of days) the request is about.
+
+    {"count": 4}             -> today, 4 days (a trip starting now)
+    {"relative": "tomorrow"} -> tomorrow, 1 day
+    {"relative": "saturday"} -> the next Saturday (today if it is Saturday), 1 day
+    "this weekend"           -> the coming Sat+Sun (just Sunday if today is Sunday)
+    "next weekend"           -> the weekend after that
+    "this week"              -> today through Sunday
+    "next week"              -> next Monday through Sunday
+    anything else            -> today, 1 day
+    """
+    today = today or date.today()
     if not dates:
-        return 1
+        return today, 1
     if "count" in dates:
-        return int(dates["count"])
-    # A single relative day ("tomorrow", "saturday") is a one-day horizon.
-    return 1
+        return today, max(1, int(dates["count"]))
+
+    rel = dates.get("relative")
+    if rel == "tomorrow":
+        return today + timedelta(days=1), 1
+    if rel in WEEKDAYS:
+        ahead = (WEEKDAYS.index(rel) - today.weekday()) % 7
+        return today + timedelta(days=ahead), 1
+    if rel in ("this weekend", "next weekend"):
+        if today.weekday() == 6:                      # Sunday: this weekend is today
+            start, days = today, 1
+        else:
+            start, days = today + timedelta(days=(5 - today.weekday()) % 7), 2
+        if rel == "next weekend":
+            start = (start if days == 2 else today - timedelta(days=1)) + timedelta(days=7)
+            days = 2
+        return start, days
+    if rel == "this week":
+        return today, 7 - today.weekday()
+    if rel == "next week":
+        return today + timedelta(days=7 - today.weekday()), 7
+    return today, 1                                   # today / tonight / unknown
+
+
+def _clip_to_forecast(start: date, days: int, today: date) -> tuple[date, int]:
+    """Keep the window inside what the weather service can forecast."""
+    last = today + timedelta(days=MAX_FORECAST_DAYS - 1)
+    if start > last:
+        return start, 0                               # too far ahead: no forecast
+    end = min(start + timedelta(days=days - 1), last)
+    return start, (end - start).days + 1
 
 
 def gather(state: OutfitState) -> dict:
     user_id = state.get("user_id") or "demo"
     query = state.get("query") or ""
     city = state.get("city")
-    days = _days_from_dates(state.get("dates") or {})
+
+    today = date.today()
+    start, days = _clip_to_forecast(*date_window(state.get("dates") or {}, today), today)
 
     # Wardrobe: prefer semantic search when there's a descriptive query,
     # otherwise just list everything the user owns.
@@ -35,8 +81,8 @@ def gather(state: OutfitState) -> dict:
     if not items:
         items = clients.fetch_wardrobe(user_id)
 
-    weather = clients.fetch_weather(city, days=days)
-    prefs = memory_store.get_prefs(user_id)
+    weather = clients.fetch_weather(city, days=days, start_date=start) if days else None
+    prefs = prefs_mod.from_memory(clients.fetch_memory(user_id))
 
     return {
         "wardrobe_items": items,

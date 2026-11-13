@@ -14,6 +14,10 @@ The project is built as small, independent services (phase 1):
 | 4 | **Weather** | Fetches the forecast and says what clothes each day needs | ✅ built |
 | 5 | **Memory** | Remembers likes, dislikes, what you wore when, and feedback | ✅ built |
 
+Phase 2 adds the **Agent** (block 6, port 8000): a LangGraph brain that takes a
+plain request ("what do I wear to office tomorrow in Goa?") and orchestrates
+the services above into an outfit. See [Block 6](#block-6-agent-service).
+
 ---
 
 ## Block 1: Wardrobe service
@@ -158,3 +162,28 @@ Then open **http://127.0.0.1:8006/docs**. Set `SYNC_WARDROBE_WEAR=true` to also
 bump the wardrobe's `wear_count` whenever an outfit is recorded.
 
 Full explanation: [`services/memory/README.md`](services/memory/README.md).
+
+---
+
+## Block 6: Agent service
+
+The brain. It reads a free-form request, works out the occasion, city and dates,
+then pulls your clothes from the wardrobe (8001), the forecast for those dates
+from weather (8004), and your likes, dislikes and recent wears from memory
+(8006), and composes an outfit. Telling it "I don't like blazers" saves that
+to the memory service.
+
+### Run it after cloning
+
+Start the wardrobe, weather and memory services first, then:
+
+```bash
+cd services/agent
+pip install -r requirements.txt
+uvicorn app.main:app --port 8000
+```
+
+Then open **http://127.0.0.1:8000/docs** and try `POST /agent` with
+`{"query": "what should I wear to office tomorrow in Goa?", "user_id": "u1"}`.
+
+Full explanation: [`services/agent/README.md`](services/agent/README.md).

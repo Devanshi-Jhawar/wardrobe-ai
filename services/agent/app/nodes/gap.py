@@ -11,7 +11,7 @@ affiliate feed — swap in a real catalogue later without touching this logic.)
 """
 from urllib.parse import quote_plus
 
-from .. import memory_store
+from .. import prefs as prefs_mod
 from ..slots import group_by_slot, CORE_SLOTS
 from ..state import OutfitState
 
@@ -25,11 +25,12 @@ SLOT_LABEL = {
 def _suggestion(slot: str, occasion: str | None, cold: bool) -> dict:
     label = SLOT_LABEL.get(slot, slot)
     occ = occasion or "everyday"
+    article = "an" if occ[0] in "aeiou" else "a"
     if slot == "outerwear" and cold:
         reason = "the forecast is cold and you have nothing to layer with"
         query = f"{occ} jacket"
     else:
-        reason = f"you have no {slot} that suits a {occ} look"
+        reason = f"you have no {slot} that suits {article} {occ} look"
         query = f"{occ} {slot}"
     return {
         "slot": slot,
@@ -43,7 +44,7 @@ def gap(state: OutfitState) -> dict:
     occasion = state.get("occasion")
     prefs = state.get("prefs") or {}
     items = [it for it in (state.get("wardrobe_items") or [])
-             if not memory_store.is_disliked(prefs, it)]
+             if not prefs_mod.is_disliked(prefs, it)]
     buckets = group_by_slot(items)
 
     draft = state.get("draft_outfit") or {}

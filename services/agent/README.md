@@ -1,7 +1,7 @@
-# Agent service (Phase 2 — the brain)
+# Agent service (block 6, Phase 2 — the brain)
 
-The 5th service. It doesn't store clothes or call weather APIs itself — it
-**orchestrates the other four services** through a [LangGraph](https://langchain-ai.github.io/langgraph/)
+It doesn't store clothes, preferences or call weather APIs itself — it
+**orchestrates the other services** through a [LangGraph](https://langchain-ai.github.io/langgraph/)
 agent, turning a free-form request ("what do I wear to office tomorrow?") into a
 concrete outfit, gap suggestions, or a saved preference.
 
@@ -19,11 +19,11 @@ planner ─► (preference?) ─► remember ─► answer
 | Node | Does |
 |------|------|
 | `planner`  | Reads the sentence → intent (recommend/trip/gap/save_preference), occasion, city, dates. |
-| `gather`   | Calls **wardrobe** + **weather** services and loads remembered **prefs**. |
-| `composer` | Picks one item per slot (top/bottom/footwear, +layer if cold, or a onepiece). |
+| `gather`   | Calls **wardrobe**, **weather** (for the asked-about dates) and **memory** (likes, dislikes, feedback, recent wears). |
+| `composer` | Picks one item per slot (top/bottom/footwear, +layer if cold, or a onepiece). Skips disliked and recently-worn items, prefers liked ones. |
 | `critic`   | Checks completeness + occasion fit. Fails → loops back to `composer` (max 3). |
 | `gap`      | Flags slots the wardrobe can't fill and suggests what to buy. |
-| `remember` | Persists a dislike ("no frocks") to the memory store. |
+| `remember` | Saves a dislike ("no frocks") to the **memory** service. |
 | `answer`   | Shapes the final human-readable + structured reply. |
 
 `planner` and `composer` are **rules-based** today (no API key needed). Their
@@ -37,8 +37,24 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
 .venv/Scripts/uvicorn app.main:app --port 8000
 ```
 
-Needs the wardrobe (8001) and weather (8004) services for full answers, but
-degrades gracefully (thinner answers) if they're down.
+Needs the wardrobe (8001), weather (8004) and memory (8006) services for full
+answers, but degrades gracefully (thinner answers) if they're down. Without
+memory it can't remember dislikes and says so.
+
+## Weather and dates
+
+The agent asks the weather service for the days the request is about —
+"tomorrow", "saturday", "this weekend", "next week", or "a 4-day trip" starting
+today — and reads each day's `label` (hot / mild / cold), `max`, `rainy` and
+`needs.layer_for_evening`. It adds a jacket only when a day is cold, and over
+several days packs for the coldest / rainiest one. Forecasts go 16 days ahead.
+
+## Memory
+
+All preferences live in the memory service (`GET /memory/{user_id}`):
+dislike words and thumbs-down items are filtered out, like words and
+thumbs-up items score higher, and items worn within `avoid_repeat_days` are
+skipped unless nothing else fits the slot.
 
 ## Endpoints
 
@@ -52,5 +68,6 @@ degrades gracefully (thinner answers) if they're down.
 
 ## Config (env vars)
 
-`WARDROBE_URL`, `WEATHER_URL`, `VISION_URL`, `EMBED_URL`, `AGENT_PORT` (8000),
-`AGENT_MODE` (`rules`), `AGENT_MAX_ATTEMPTS` (3), `AGENT_MEMORY_PATH`.
+`WARDROBE_URL`, `WEATHER_URL`, `MEMORY_URL` (`http://localhost:8006`),
+`VISION_URL`, `EMBED_URL`, `AGENT_PORT` (8000), `AGENT_MODE` (`rules`),
+`AGENT_MAX_ATTEMPTS` (3).

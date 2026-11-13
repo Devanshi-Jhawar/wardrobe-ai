@@ -21,7 +21,16 @@ def answer(state: OutfitState) -> dict:
 
     # --- saved a preference ---
     if intent == "save_preference":
-        thing = state.get("preference") or "that"
+        thing = state.get("preference")
+        if not thing:
+            msg = "I couldn't tell what you'd like me to avoid — try \"I don't like frocks\"."
+            return {"final_answer": {"type": "preference_not_saved", "message": msg,
+                                     "remembered": None}}
+        if not state.get("memory_saved"):
+            msg = (f"I understood you don't like {thing}, but I couldn't save it — "
+                   "the memory service isn't reachable right now.")
+            return {"final_answer": {"type": "preference_not_saved", "message": msg,
+                                     "remembered": None}}
         msg = f"Got it — I'll stop suggesting {thing}. I'll remember that from now on."
         return {"final_answer": {"type": "preference_saved",
                                  "message": msg,

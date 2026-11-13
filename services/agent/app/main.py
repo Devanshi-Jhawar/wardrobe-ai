@@ -1,4 +1,4 @@
-"""The agent service (the 5th service) — HTTP front door to the LangGraph brain.
+"""The agent service (block 6) — HTTP front door to the LangGraph brain.
 
 Endpoints (from the Phase-2 plan):
   GET  /health    — is the agent up, and which downstream services are reachable
@@ -7,11 +7,11 @@ Endpoints (from the Phase-2 plan):
   POST /feedback   — record a preference directly ("I don't like frocks")
   GET  /wardrobe   — surface the user's wardrobe (proxied from the wardrobe service)
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from . import clients, config, memory_store
-from .graph import AGENT, run_agent
+from . import clients, config
+from .graph import run_agent
 
 app = FastAPI(title="Wardrobe AI — Agent", version="0.1.0")
 
@@ -48,6 +48,7 @@ def health():
             "vision":   clients.ping(config.VISION_URL),
             "embedding": clients.ping(config.EMBED_URL),
             "weather":  clients.ping(config.WEATHER_URL),
+            "memory":   clients.ping(config.MEMORY_URL),
         },
     }
 
@@ -90,8 +91,10 @@ def outfit(req: OutfitRequest):
 
 @app.post("/feedback")
 def feedback(req: FeedbackRequest):
-    """Directly remember a dislike, without going through the graph."""
-    prefs = memory_store.add_dislike(req.user_id, req.dislike)
+    """Directly remember a dislike (in the memory service), without the graph."""
+    prefs = clients.add_dislike(req.user_id, req.dislike)
+    if prefs is None:
+        raise HTTPException(status_code=503, detail="Memory service unreachable")
     return {"status": "saved", "prefs": prefs}
 
 

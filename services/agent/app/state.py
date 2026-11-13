@@ -22,7 +22,7 @@ class OutfitState(TypedDict, total=False):
     # --- written by: gather ---
     wardrobe_items: list[dict]
     weather: dict | None
-    prefs: dict | None
+    prefs: dict | None         # likes/dislikes/feedback/recent wears (see prefs.py)
 
     # --- written by: composer ---
     draft_outfit: dict | None
@@ -34,6 +34,9 @@ class OutfitState(TypedDict, total=False):
 
     # --- written by: gap ---
     missing_items: list[dict]
+
+    # --- written by: remember ---
+    memory_saved: bool | None  # did the memory service accept the preference?
 
     # --- written by: answer ---
     final_answer: dict | None
