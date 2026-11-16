@@ -20,13 +20,25 @@ HTTP_TIMEOUT = float(os.getenv("AGENT_HTTP_TIMEOUT", "10"))
 # Text embedding can be slow the first time CLIP runs on CPU.
 EMBED_TIMEOUT = float(os.getenv("AGENT_EMBED_TIMEOUT", "30"))
 
-# "llm" = the planner asks Grok (xAI) to read the request, falling back to the
+# "llm" = the planner asks an LLM to read the request, falling back to the
 # rules on any failure. "rules" = no LLM at all. Default: llm when a key is set.
-XAI_API_KEY = os.getenv("XAI_API_KEY", "").strip()
-XAI_BASE_URL = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1").rstrip("/")
-XAI_MODEL = os.getenv("XAI_MODEL", "").strip()     # empty = pick from xAI's model list
+#
+# Any OpenAI-compatible chat API works. Built-in providers:
+#   groq -> GROQ_API_KEY   (https://api.groq.com/openai/v1)
+#   xai  -> XAI_API_KEY    (Grok, https://api.x.ai/v1)
+# LLM_PROVIDER picks one explicitly; otherwise whichever key is set (Groq first).
+PROVIDERS = {
+    "groq": {"key_env": "GROQ_API_KEY", "base_url": "https://api.groq.com/openai/v1"},
+    "xai":  {"key_env": "XAI_API_KEY",  "base_url": "https://api.x.ai/v1"},
+}
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").strip().lower() or next(
+    (name for name, p in PROVIDERS.items() if os.getenv(p["key_env"], "").strip()), "groq")
+_provider = PROVIDERS.get(LLM_PROVIDER, PROVIDERS["groq"])
+LLM_API_KEY = (os.getenv("LLM_API_KEY") or os.getenv(_provider["key_env"]) or "").strip()
+LLM_BASE_URL = (os.getenv("LLM_BASE_URL") or _provider["base_url"]).rstrip("/")
+LLM_MODEL = os.getenv("LLM_MODEL", "").strip()     # empty = pick from the provider's model list
 LLM_TIMEOUT = float(os.getenv("AGENT_LLM_TIMEOUT", "30"))
-MODE = os.getenv("AGENT_MODE", "llm" if XAI_API_KEY else "rules")
+MODE = os.getenv("AGENT_MODE", "llm" if LLM_API_KEY else "rules")
 
 # Browser origins allowed to call the API directly (the UI normally goes
 # through its own proxy, so this only matters for other front ends).

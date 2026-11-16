@@ -1,4 +1,4 @@
-"""The Grok planner: its reply is validated and merged with the rules, and any
+"""The LLM planner (Groq or xAI): its reply is validated and merged with the rules, and any
 failure falls back to the rules. No real API calls are made."""
 from datetime import date, timedelta
 
@@ -10,18 +10,18 @@ from app.nodes import planner as P
 
 
 @pytest.fixture
-def grok(monkeypatch):
+def fake_llm(monkeypatch):
     """Turn LLM mode on and make chat_json return whatever the test sets."""
     monkeypatch.setattr(config, "MODE", "llm")
-    monkeypatch.setattr(config, "XAI_API_KEY", "test-key")
+    monkeypatch.setattr(config, "LLM_API_KEY", "test-key")
     reply = {"data": None}
     monkeypatch.setattr(llm, "chat_json", lambda system, user, **k: reply["data"])
     return reply
 
 
-def test_llm_reply_used(grok):
+def test_llm_reply_used(fake_llm):
     start = (date.today() + timedelta(days=3)).isoformat()
-    grok["data"] = {
+    fake_llm["data"] = {
         "intent": "trip", "occasion": None, "city": "Udaipur",
         "dates": {"relative": None, "start_date": start, "count": None},
         "search_text": None, "preference_kind": None, "preferences": [],
@@ -35,8 +35,8 @@ def test_llm_reply_used(grok):
     assert [d["occasion"] for d in out["itinerary"]] == ["wedding", "wedding"]  # sangeet -> wedding
 
 
-def test_invalid_fields_fall_back_to_rules(grok):
-    grok["data"] = {"intent": "dance", "occasion": "galactic", "city": "",
+def test_invalid_fields_fall_back_to_rules(fake_llm):
+    fake_llm["data"] = {"intent": "dance", "occasion": "galactic", "city": "",
                     "dates": {"count": 99, "start_date": "not a date"}, "itinerary": "x"}
     out = P.planner({"query": "what should I wear to office tomorrow in Goa?"})
     assert out["planner_source"] == "llm"
@@ -46,8 +46,8 @@ def test_invalid_fields_fall_back_to_rules(grok):
     assert out["dates"] == {"relative": "tomorrow"}
 
 
-def test_preference_from_llm(grok):
-    grok["data"] = {"intent": "save_preference", "preference_kind": "dislike",
+def test_preference_from_llm(fake_llm):
+    fake_llm["data"] = {"intent": "save_preference", "preference_kind": "dislike",
                     "preferences": ["Frocks", "neon colours"]}
     out = P.planner({"query": "ugh, frocks and anything neon are not me"})
     assert out == {"intent": "save_preference", "preference_kind": "dislike",
@@ -55,8 +55,8 @@ def test_preference_from_llm(grok):
                    "preference": "frocks, neon colours", "planner_source": "llm"}
 
 
-def test_llm_failure_uses_rules(grok):
-    grok["data"] = None
+def test_llm_failure_uses_rules(fake_llm):
+    fake_llm["data"] = None
     out = P.planner({"query": "packing for a 4-day trip to Shimla"})
     assert out["planner_source"] == "rules" and out["dates"] == {"count": 4}
 
@@ -75,18 +75,26 @@ def test_extract_json_tolerates_fences():
     assert llm._extract_json("no json here") is None
 
 
-def test_pick_model_prefers_fast_text():
+def test_pick_model_groq():
+    ids = ["whisper-large-v3", "llama-guard-4-12b", "llama-3.1-8b-instant",
+           "llama-3.3-70b-versatile", "openai/gpt-oss-120b"]
+    assert llm._pick_model(ids, "groq") == "llama-3.3-70b-versatile"
+    assert llm._pick_model(["whisper-large-v3", "llama-3.1-8b-instant"], "groq") == "llama-3.1-8b-instant"
+    assert llm._pick_model(["whisper-large-v3", "some-new-120b-model"], "groq") == "some-new-120b-model"
+    assert llm._pick_model([], "groq") is None
+
+
+def test_pick_model_xai():
     ids = ["grok-imagine-image", "grok-4", "grok-4-fast-reasoning",
            "grok-4-fast-non-reasoning", "grok-3-mini"]
-    assert llm._pick_model(ids) == "grok-4-fast-non-reasoning"
-    assert llm._pick_model(["grok-2-vision", "grok-3"]) == "grok-3"
-    assert llm._pick_model([]) is None
+    assert llm._pick_model(ids, "xai") == "grok-4-fast-non-reasoning"
+    assert llm._pick_model(["grok-2-vision", "grok-3"], "xai") == "grok-3"
 
 
 def test_chat_json_network_error_returns_none(monkeypatch):
     monkeypatch.setattr(config, "MODE", "llm")
-    monkeypatch.setattr(config, "XAI_API_KEY", "k")
-    monkeypatch.setattr(config, "XAI_MODEL", "grok-test")
+    monkeypatch.setattr(config, "LLM_API_KEY", "k")
+    monkeypatch.setattr(config, "LLM_MODEL", "llama-test")
 
     def boom(*a, **k):
         raise httpx.ConnectError("down")
@@ -96,8 +104,8 @@ def test_chat_json_network_error_returns_none(monkeypatch):
 
 def test_chat_json_parses_reply(monkeypatch):
     monkeypatch.setattr(config, "MODE", "llm")
-    monkeypatch.setattr(config, "XAI_API_KEY", "k")
-    monkeypatch.setattr(config, "XAI_MODEL", "grok-test")
+    monkeypatch.setattr(config, "LLM_API_KEY", "k")
+    monkeypatch.setattr(config, "LLM_MODEL", "llama-test")
     sent = {}
 
     def fake_post(url, headers, json, timeout):
@@ -107,4 +115,4 @@ def test_chat_json_parses_reply(monkeypatch):
     monkeypatch.setattr(llm.httpx, "post", fake_post)
     assert llm.chat_json("s", "u") == {"intent": "gap"}
     assert sent["url"].endswith("/chat/completions") and sent["auth"] == "Bearer k"
-    assert sent["model"] == "grok-test"
+    assert sent["model"] == "llama-test"

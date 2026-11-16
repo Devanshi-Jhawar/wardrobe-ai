@@ -8,7 +8,7 @@ import importlib.util
 import os
 import re
 
-# The fast tests never call Grok, even if XAI_API_KEY is set in the shell.
+# The fast tests never call an LLM, even if GROQ_API_KEY / XAI_API_KEY is set in the shell.
 os.environ["AGENT_MODE"] = "rules"
 import sys
 from datetime import date, timedelta

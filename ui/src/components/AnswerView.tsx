@@ -113,7 +113,7 @@ function HowIRead({ reply }: { reply: AgentReply }) {
     <details className="how">
       <summary><IconChevron size={13} /> How I read this</summary>
       <dl>
-        <dt>Understood by</dt><dd>{d.planner === "llm" ? "Grok (LLM planner)" : "Rules planner"}</dd>
+        <dt>Understood by</dt><dd>{d.planner === "llm" ? "LLM planner" : "Rules planner"}</dd>
         <dt>Intent</dt><dd>{reply.intent}</dd>
         <dt>Occasion</dt><dd>{d.occasion ?? "none"}</dd>
         <dt>City</dt><dd>{d.city ?? "default location"}</dd>

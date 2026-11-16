@@ -1,6 +1,6 @@
 # Wardrobe AI: every service plus Postgres (with pgvector) in one command.
 #
-#   copy .env.example .env      # then add XAI_API_KEY
+#   copy .env.example .env      # then add GROQ_API_KEY
 #   docker compose up --build
 #
 # UI: http://localhost:8080   API docs: http://localhost:8000/docs
@@ -85,8 +85,10 @@ services:
       EMBED_URL: http://embedding:8003
       WEATHER_URL: http://weather:8004
       MEMORY_URL: http://memory:8006
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
       XAI_API_KEY: ${XAI_API_KEY:-}
-      XAI_MODEL: ${XAI_MODEL:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      LLM_MODEL: ${LLM_MODEL:-}
     ports: ["8000:8000"]
     depends_on: [wardrobe, weather, memory, embedding]
 

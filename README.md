@@ -17,7 +17,7 @@ The project is built as small, independent services (phase 1):
 Phase 2 adds the **Agent** (block 6, port 8000): a LangGraph brain that takes a
 plain request ("what do I wear to office tomorrow in Goa?") and orchestrates
 the services above into an outfit. See [Block 6](#block-6-agent-service).
-Phase 3 adds the **UI** (port 8080), the **Grok LLM planner**, **Postgres +
+Phase 3 adds the **UI** (port 8080), the **LLM planner (Groq)**, **Postgres +
 pgvector**, and Docker Compose to run it all with one command.
 
 ## Quick start: everything in Docker
@@ -28,7 +28,7 @@ nothing else to install.
 ```bash
 git lfs pull                     # the vision model (best.pt)
 copy .env.example .env           # Windows   (cp on macOS / Linux)
-# open .env and set XAI_API_KEY=... for the Grok planner (optional)
+# open .env and set GROQ_API_KEY=... for the LLM planner (optional)
 docker compose up --build        # first build takes a while (PyTorch for vision)
 ```
 
@@ -231,8 +231,8 @@ uvicorn app.main:app --port 8000
 Then open **http://127.0.0.1:8000/docs** and try `POST /agent` with
 `{"query": "what should I wear to office tomorrow in Goa?", "user_id": "u1"}`.
 
-**Grok planner:** set `XAI_API_KEY` (in `.env` for Docker, or the environment)
-and the planner asks Grok to read the request, falling back to the rules if
+**LLM planner:** set `GROQ_API_KEY` (in `.env` for Docker, or the environment)
+and the planner asks Groq to read the request, falling back to the rules if
 the call fails. Without a key it uses the rules. `GET /health` shows which.
 
 **Trips with a plan per day:** "4 day trip to Goa: day 1 beach, day 2 wedding,

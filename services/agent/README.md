@@ -26,16 +26,20 @@ planner ─► (preference?) ─► remember ─► answer
 | `remember` | Saves likes / dislikes ("no frocks", "I love blue") to the **memory** service. |
 | `answer`   | Shapes the final human-readable + structured reply. |
 
-## Planner: Grok or rules
+## Planner: LLM (Groq) or rules
 
-With `XAI_API_KEY` set, `AGENT_MODE` defaults to `llm`: the planner sends the
-request to Grok (xAI's OpenAI-compatible chat API, `app/llm.py`) and gets back
+With `GROQ_API_KEY` set, `AGENT_MODE` defaults to `llm`: the planner sends the
+request to Groq's OpenAI-compatible chat API (`app/llm.py`) and gets back
 the same fields as JSON (intent, occasion, city, dates incl. explicit start
 dates, search words, likes/dislikes, per-day itinerary). Every field is
 validated; anything missing or invalid comes from the rules planner, and if
-the call fails entirely the rules answer is used. `XAI_MODEL` pins a model;
-left empty, the agent picks a fast Grok text model from your account's
-`/models` list. `/agent` replies show `debug.planner` = `llm` or `rules`.
+the call fails entirely the rules answer is used. `LLM_MODEL` pins a model;
+left empty, the agent picks one from your account's `/models` list
+(`llama-3.3-70b-versatile` first when available). `/agent` replies show
+`debug.planner` = `llm` or `rules`.
+
+Grok (xAI) works too: set `XAI_API_KEY` and `LLM_PROVIDER=xai`. Any other
+OpenAI-compatible API: `LLM_API_KEY` + `LLM_BASE_URL`.
 
 Without a key everything runs on rules, as before. The composer, critic and
 gap stay rules-based (fast, explainable, testable).
@@ -44,7 +48,7 @@ gap stay rules-based (fast, explainable, testable).
 
 "4 day trip to Goa: day 1 beach, day 2 wedding, last day flight home" gives
 `itinerary = [{day, occasion, activity}]` (rules handle "day 1", "2nd day",
-"third day", "last day"; Grok handles freer phrasing). Each day is dressed
+"third day", "last day"; the LLM handles freer phrasing). Each day is dressed
 for its own occasion against its own forecast, the critic checks each day,
 and days past the 16-day forecast are still planned (without weather).
 Trip activities map onto wardrobe tags: beach / sightseeing / travel read
@@ -210,7 +214,7 @@ each service still agree on their APIs (they create a random memory user).
 
 `WARDROBE_URL`, `WEATHER_URL`, `MEMORY_URL` (`http://localhost:8006`),
 `EMBED_URL` (`http://localhost:8003`), `VISION_URL`, `AGENT_PORT` (8000),
-`XAI_API_KEY`, `XAI_MODEL` (empty = auto), `XAI_BASE_URL`, `AGENT_LLM_TIMEOUT` (30 s),
+`GROQ_API_KEY` (or `XAI_API_KEY`), `LLM_PROVIDER` (`groq` / `xai`), `LLM_MODEL` (empty = auto), `LLM_API_KEY` + `LLM_BASE_URL` (any OpenAI-compatible API), `AGENT_LLM_TIMEOUT` (30 s),
 `AGENT_MODE` (`llm` when a key is set, else `rules`), `AGENT_CORS_ORIGINS`,
 `AGENT_MAX_ATTEMPTS` (3), `AGENT_HTTP_TIMEOUT` (10 s),
 `AGENT_EMBED_TIMEOUT` (30 s — CLIP on CPU can be slow on its first call).

@@ -90,7 +90,7 @@ export default function App() {
               <>
                 <div className="status-row">
                   <span><span className={`dot ${health.llm.enabled ? "on" : ""}`} />Planner</span>
-                  <span>{health.llm.enabled ? "Grok" : "Rules"}</span>
+                  <span>{health.llm.enabled ? (health.llm.provider === "xai" ? "Grok" : "Groq") : "Rules"}</span>
                 </div>
                 {Object.entries(health.services).map(([k, up]) => (
                   <div className="status-row" key={k}>

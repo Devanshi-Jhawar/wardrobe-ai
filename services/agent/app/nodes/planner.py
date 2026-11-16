@@ -6,7 +6,7 @@ nothing and recommends nothing.
 
 Two implementations behind one function:
   - rules: fast, no API key, handles the common phrasings;
-  - llm (AGENT_MODE=llm + XAI_API_KEY): Grok reads the sentence and returns
+  - llm (AGENT_MODE=llm + GROQ_API_KEY or XAI_API_KEY): an LLM reads the sentence and returns
     the same fields as JSON. Anything it gets wrong or leaves out is filled
     from the rules, and if the call fails the rules answer is used as is.
 
@@ -312,7 +312,7 @@ def _clean_dates(raw, fallback: dict) -> dict:
 
 
 def merge_llm(data: dict, rules: dict) -> dict:
-    """Grok's fields, validated; anything missing or invalid comes from the rules."""
+    """The LLM's fields, validated; anything missing or invalid comes from the rules."""
     intent = str(data.get("intent") or "").lower()
     intent = intent if intent in INTENTS else rules["intent"]
 
@@ -344,7 +344,7 @@ def merge_llm(data: dict, rules: dict) -> dict:
 
 
 def llm_planner(state: OutfitState, rules: dict) -> dict | None:
-    """Ask Grok; None if the LLM is off or its reply is unusable."""
+    """Ask the LLM; None if the LLM is off or its reply is unusable."""
     today = date.today()
     system = LLM_SYSTEM.format(
         occasions=", ".join(f'"{o}"' for o in OCCASION_KEYWORDS),
