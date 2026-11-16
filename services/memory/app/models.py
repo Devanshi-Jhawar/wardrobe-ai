@@ -26,6 +26,8 @@ class Preferences(Base):
     likes: Mapped[list] = mapped_column(JSON, default=list)
     dislikes: Mapped[list] = mapped_column(JSON, default=list)
     avoid_repeat_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Where the user lives: used for the weather when a question names no place.
+    home_city: Mapped[str | None] = mapped_column(String(120), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 

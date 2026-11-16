@@ -20,7 +20,7 @@ function Suggestions({ items, title }: { items: Suggestion[]; title: string }) {
           <div className="suggestion" key={i}>
             <div>
               <div className="suggestion-title">
-                {s.title}
+                {capitalize(s.title)}
                 <span className="tag accent">{KIND_LABEL[s.kind] ?? capitalize(s.kind)}</span>
                 {s.day ? <span className="tag">Day {s.day}</span> : null}
               </div>
@@ -89,11 +89,12 @@ function Day({ userId, d }: { userId: string; d: TripDay }) {
       </div>
       <div className="day-weather">
         {d.max != null && <span className="tag">{Math.round(d.max)}&deg;{d.min != null ? ` / ${Math.round(d.min)}°` : ""}</span>}
-        {d.label && <span className="tag">{d.label}</span>}
+        {d.label && <span className="tag">{capitalize(d.label)}</span>}
         {d.rainy && <span className="tag warn">Rain</span>}
-        {d.occasion && <span className="tag accent">{d.occasion}</span>}
+        {d.occasion && <span className="tag accent">{capitalize(d.occasion)}</span>}
       </div>
-      {d.activity && d.activity !== d.occasion && <div className="day-activity">{d.activity}</div>}
+      {d.activity && d.activity !== d.occasion && <div className="day-activity">{capitalize(d.activity)}</div>}
+      {d.note && <p className="stylist-note small">{d.note}</p>}
       {d.outfit.length ? (
         <div className="day-items">
           {d.outfit.map((it, i) => <Look key={(it.id ?? "") + i} userId={userId} item={it} compact />)}
@@ -114,9 +115,10 @@ function HowIRead({ reply }: { reply: AgentReply }) {
       <summary><IconChevron size={13} /> How I read this</summary>
       <dl>
         <dt>Understood by</dt><dd>{d.planner === "llm" ? "LLM planner" : "Rules planner"}</dd>
+        {d.composer ? <><dt>Outfit picked by</dt><dd>{d.composer === "llm" ? "LLM stylist, checked by the rules" : "Rules"}</dd></> : null}
         <dt>Intent</dt><dd>{reply.intent}</dd>
         <dt>Occasion</dt><dd>{d.occasion ?? "none"}</dd>
-        <dt>City</dt><dd>{d.city ?? "default location"}</dd>
+        <dt>City</dt><dd>{d.city ?? "not mentioned"}</dd>
         <dt>Dates</dt><dd>{dates}</dd>
         {d.itinerary?.length ? (
           <><dt>Itinerary</dt><dd>{d.itinerary.map((x) => `Day ${x.day}: ${x.occasion ?? x.activity ?? "open"}`).join("; ")}</dd></>
@@ -127,6 +129,29 @@ function HowIRead({ reply }: { reply: AgentReply }) {
       </dl>
     </details>
   );
+}
+
+/** Says where the temperature came from, or why there is none. */
+function WeatherNote({ a }: { a: AgentReply["answer"] }) {
+  if (a.weather_missing === "no_city") {
+    return (
+      <p className="weather-note">
+        No place was mentioned and no home city is saved, so the weather was not considered.{" "}
+        <a href="#/preferences">Add your home city</a> or name a city in your question.
+      </p>
+    );
+  }
+  if (a.weather_missing === "unavailable") {
+    return <p className="weather-note">The forecast could not be fetched, so the weather was not considered.</p>;
+  }
+  if (a.weather_source === "home" && a.weather_place) {
+    return (
+      <p className="weather-note">
+        Weather for your home city, {a.weather_place}. Name a city in your question to plan for somewhere else.
+      </p>
+    );
+  }
+  return null;
 }
 
 export function AnswerView({ userId, reply }: { userId: string; reply: AgentReply }) {
@@ -166,6 +191,7 @@ export function AnswerView({ userId, reply }: { userId: string; reply: AgentRepl
     return (
       <div className="msg-agent">
         <div className="lead">Your {days.length}-day plan{where}.</div>
+        <WeatherNote a={a} />
         <div className="days">{days.map((d) => <Day key={d.day} userId={userId} d={d} />)}</div>
         {a.packing_list?.length ? (
           <section>
@@ -193,9 +219,11 @@ export function AnswerView({ userId, reply }: { userId: string; reply: AgentRepl
       </div>
       {a.rationale && a.rationale !== "general recommendation" && (
         <div className="msg-meta">
-          {a.rationale.split("; ").map((r) => <span key={r} className="tag">{r}</span>)}
+          {a.rationale.split("; ").map((r) => <span key={r} className="tag">{capitalize(r)}</span>)}
         </div>
       )}
+      <WeatherNote a={a} />
+      {a.note && outfit.length > 0 && <p className="stylist-note">{a.note}</p>}
       {outfit.length > 0 && (
         <div className="outfit-grid">
           {outfit.map((it, i) => <Look key={(it.id ?? "") + i} userId={userId} item={it} />)}

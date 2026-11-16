@@ -35,14 +35,35 @@ dates, search words, likes/dislikes, per-day itinerary). Every field is
 validated; anything missing or invalid comes from the rules planner, and if
 the call fails entirely the rules answer is used. `LLM_MODEL` pins a model;
 left empty, the agent picks one from your account's `/models` list
-(`llama-3.3-70b-versatile` first when available). `/agent` replies show
-`debug.planner` = `llm` or `rules`.
+(`llama-3.3-70b-versatile` first when available, then `openai/gpt-oss-120b`).
+Reasoning models (gpt-oss) are sent `reasoning_effort: low` with extra token
+room so the JSON isn't cut off; a rate limit (429) is retried once after a
+short wait. `/agent` replies show `debug.planner` = `llm` or `rules`.
 
 Grok (xAI) works too: set `XAI_API_KEY` and `LLM_PROVIDER=xai`. Any other
 OpenAI-compatible API: `LLM_API_KEY` + `LLM_BASE_URL`.
 
-Without a key everything runs on rules, as before. The composer, critic and
-gap stay rules-based (fast, explainable, testable).
+Without a key everything runs on rules, as before.
+
+## Composer: LLM stylist, checked by the rules
+
+In LLM mode the composer (`app/nodes/llm_composer.py`) shows the LLM the
+wardrobe (short ids `i1`, `i2`, ...; disliked items already removed), the
+weather per day, the occasion and itinerary, likes and recently worn items,
+and asks it to pick each day's outfit with a one- or two-sentence note. The
+rules composer always runs first; its draft is the fallback and fills any
+core slot the LLM leaves out. The LLM's pick is then checked:
+
+- ids that aren't in the wardrobe are dropped
+- one item per clothing slot; a onepiece never with a top or bottom
+- no dress-code breaks (slippers to a wedding) while an alternative exists
+- at most 4 accessories
+
+A failed call, bad JSON or a day with nothing valid keeps the rules' outfit.
+The critic still reviews the result; if it sends an LLM draft back, the
+retry is the rules' best pick (the LLM gets one pass per question). Replies
+carry `note` (per day on trips) and `debug.composer` = `llm` or `rules`.
+The critic and gap nodes stay rules-based.
 
 ## Trip itineraries
 

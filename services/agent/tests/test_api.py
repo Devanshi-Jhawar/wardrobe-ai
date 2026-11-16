@@ -15,7 +15,7 @@ class FakeMemory:
     """Just enough of the memory service for the agent."""
 
     def __init__(self):
-        self.prefs = {"likes": [], "dislikes": [], "avoid_repeat_days": 3}
+        self.prefs = {"likes": [], "dislikes": [], "avoid_repeat_days": 3, "home_city": "Pune"}
         self.worn, self.ratings, self.up = [], [], True
 
     def memory(self, user_id):
@@ -82,7 +82,9 @@ def test_wear_then_not_repeated(api, mem):
     assert r.status_code == 201 and mem.worn[0]["item_ids"] == first["item_ids"]
     second = ask(api, "what should I wear to office?")
     clothes = lambda a: {i["id"] for i in a["outfit"] if i["category"] not in {"Bag", "Jewellery"}}
-    assert not clothes(first) & clothes(second) - {"jeans"}  # only repeats what has no alternative
+    # Only repeats what has no office-worthy alternative (the one pair of jeans,
+    # the one blazer, and shoes - the other footwear is slippers).
+    assert not clothes(first) & clothes(second) - {"jeans", "blazer", "shoes"}
 
 
 def test_wear_validation_and_memory_down(api, mem):
@@ -131,3 +133,23 @@ def test_services_down_still_answers(api, mem, monkeypatch):
     monkeypatch.setattr(clients, "fetch_weather", lambda *a, **k: None)
     a = ask(api, "what should I wear to office?")
     assert a["type"] == "recommendation" and a["outfit"]
+
+
+def test_weather_uses_home_city_when_none_asked(api, mem, monkeypatch, today):
+    asked = []
+    monkeypatch.setattr(clients, "fetch_weather", lambda city, days=1, start_date=None: (
+        asked.append(city) or {**weather_reply(weather_day(26, on=today)), "place": f"{city}, Maharashtra, India"}))
+    a = ask(api, "what should I wear to office?")
+    assert asked == ["Pune"]
+    assert a["weather_source"] == "home" and a["weather_place"] == "Pune, Maharashtra"
+    assert "in Pune, Maharashtra" in a["rationale"]
+    a = ask(api, "what should I wear to office in Goa?")
+    assert asked[-1] == "Goa" and a["weather_source"] == "asked"
+
+
+def test_no_city_no_weather(api, mem, monkeypatch):
+    mem.prefs["home_city"] = None
+    monkeypatch.setattr(clients, "fetch_weather", lambda *a, **k: pytest.fail("guessed a place"))
+    a = ask(api, "what should I wear to office?")
+    assert a["outfit"] and a["weather_missing"] == "no_city" and a["weather_place"] is None
+    assert "°C" not in (a["rationale"] or "")

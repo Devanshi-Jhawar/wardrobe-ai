@@ -232,8 +232,10 @@ Then open **http://127.0.0.1:8000/docs** and try `POST /agent` with
 `{"query": "what should I wear to office tomorrow in Goa?", "user_id": "u1"}`.
 
 **LLM planner:** set `GROQ_API_KEY` (in `.env` for Docker, or the environment)
-and the planner asks Groq to read the request, falling back to the rules if
-the call fails. Without a key it uses the rules. `GET /health` shows which.
+and the planner asks Groq to read the request, and the composer asks it to
+pick the outfit from your wardrobe with a short note on why. The rules check
+its pick (real items only, one per slot, dress code) and take over if a call
+fails. Without a key everything uses the rules. `GET /health` shows which.
 
 **Trips with a plan per day:** "4 day trip to Goa: day 1 beach, day 2 wedding,
 day 3 sightseeing, day 4 flight home" dresses each day for its own occasion

@@ -7,12 +7,15 @@ class PreferencesIn(BaseModel):
     likes: list[str] | None = None
     dislikes: list[str] | None = None
     avoid_repeat_days: int | None = Field(None, ge=0, le=60)
+    # Empty string clears it.
+    home_city: str | None = Field(None, max_length=120)
 
 
 class PreferencesOut(BaseModel):
     likes: list[str]
     dislikes: list[str]
     avoid_repeat_days: int
+    home_city: str | None = None
 
 
 class WornIn(BaseModel):

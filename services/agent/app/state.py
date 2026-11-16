@@ -28,6 +28,9 @@ class OutfitState(TypedDict, total=False):
     wardrobe_items: list[dict]
     search_scores: dict        # {item_id: cosine score}; empty if search unavailable
     weather: dict | None
+    llm_used: bool              # the LLM stylist has had its one pass
+    composer_source: str | None # "llm" or "rules": who picked the outfit
+    weather_source: str | None  # "asked" (city in the question), "home" (saved home city) or None
     prefs: dict | None         # likes/dislikes/feedback/recent wears (see prefs.py)
 
     # --- written by: composer ---

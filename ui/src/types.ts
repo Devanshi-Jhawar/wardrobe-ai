@@ -50,6 +50,7 @@ export interface TripDay {
   outfit: OutfitItem[];
   item_ids: string[];
   rationale: string | null;
+  note?: string | null;
 }
 
 export interface Answer {
@@ -64,6 +65,10 @@ export interface Answer {
   item_ids?: string[];
   carry?: string[];
   rationale?: string | null;
+  note?: string | null;
+  weather_place?: string | null;
+  weather_source?: "asked" | "home" | null;
+  weather_missing?: "no_city" | "unavailable" | null;
   critic_notes?: string | null;
   attempts?: number;
   suggestions?: Suggestion[];
@@ -82,6 +87,7 @@ export interface AgentReply {
     dates: Record<string, unknown> | null;
     itinerary: { day: number; occasion: string | null; activity: string | null }[] | null;
     planner: "llm" | "rules" | null;
+    composer?: "llm" | "rules" | null;
     attempts: number | null;
     critic_notes: string | null;
     wardrobe_count: number;
@@ -94,6 +100,7 @@ export interface Preferences {
   likes: string[];
   dislikes: string[];
   avoid_repeat_days: number;
+  home_city?: string | null;
 }
 
 export interface WornEntry {

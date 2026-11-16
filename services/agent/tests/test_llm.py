@@ -35,6 +35,14 @@ def test_llm_reply_used(fake_llm):
     assert [d["occasion"] for d in out["itinerary"]] == ["wedding", "wedding"]  # sangeet -> wedding
 
 
+def test_made_up_start_date_loses_to_relative_day(fake_llm):
+    fake_llm["data"] = {"intent": "trip", "city": "Manali",
+                        "dates": {"start_date": (date.today() + timedelta(days=7)).isoformat()},
+                        "itinerary": [{"day": 1, "occasion": "festival"}, {"day": 2, "occasion": "wedding"}]}
+    out = P.planner({"query": "Manali next weekend, haldi saturday and wedding sunday"})
+    assert out["dates"] == {"relative": "next weekend", "count": 2}
+
+
 def test_invalid_fields_fall_back_to_rules(fake_llm):
     fake_llm["data"] = {"intent": "dance", "occasion": "galactic", "city": "",
                     "dates": {"count": 99, "start_date": "not a date"}, "itinerary": "x"}
@@ -116,3 +124,37 @@ def test_chat_json_parses_reply(monkeypatch):
     assert llm.chat_json("s", "u") == {"intent": "gap"}
     assert sent["url"].endswith("/chat/completions") and sent["auth"] == "Bearer k"
     assert sent["model"] == "llama-test"
+
+
+def test_named_festival_beats_generic_party(fake_llm):
+    fake_llm["data"] = {"intent": "recommend", "occasion": "party"}
+    assert P.planner({"query": "outfit for a diwali party"})["occasion"] == "festival"
+    fake_llm["data"] = {"intent": "recommend", "occasion": "party"}
+    assert P.planner({"query": "outfit for a birthday party"})["occasion"] == "party"
+
+
+def test_reasoning_model_gets_low_effort_and_room(monkeypatch):
+    monkeypatch.setattr(config, "MODE", "llm")
+    monkeypatch.setattr(config, "LLM_API_KEY", "k")
+    monkeypatch.setattr(config, "LLM_PROVIDER", "groq")
+    monkeypatch.setattr(config, "LLM_MODEL", "openai/gpt-oss-120b")
+    sent = {}
+
+    def fake_post(url, headers, json, timeout):
+        sent.update(json)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]},
+                              request=httpx.Request("POST", url))
+    monkeypatch.setattr(llm.httpx, "post", fake_post)
+    llm.chat_json("s", "u", max_tokens=300)
+    assert sent["reasoning_effort"] == "low" and sent["max_tokens"] == 300 + llm.REASONING_ROOM
+
+
+def test_rate_limit_retried_once(monkeypatch):
+    monkeypatch.setattr(config, "MODE", "llm")
+    monkeypatch.setattr(config, "LLM_API_KEY", "k")
+    monkeypatch.setattr(config, "LLM_MODEL", "m")
+    monkeypatch.setattr(llm.time, "sleep", lambda s: None)
+    replies = [httpx.Response(429, headers={"retry-after": "1"}),
+               httpx.Response(200, json={"choices": [{"message": {"content": '{"ok": 1}'}}]})]
+    monkeypatch.setattr(llm.httpx, "post", lambda *a, **k: replies.pop(0))
+    assert llm.chat_json("s", "u") == {"ok": 1}

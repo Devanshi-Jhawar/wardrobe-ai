@@ -45,24 +45,35 @@ export function Preferences({ userId }: { userId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [days, setDays] = useState("3");
+  const [saved, setSaved] = useState(false);
+  const [city, setCity] = useState("");
+
+  useEffect(() => {
+    if (!saved) return;
+    const t = setTimeout(() => setSaved(false), 2500);
+    return () => clearTimeout(t);
+  }, [saved]);
 
   const load = useCallback(() => {
     setError(null);
     Promise.all([api.memory(userId), api.history(userId)])
-      .then(([m, h]) => { setMemory(m); setHistory(h.outfits); setDays(String(m.preferences.avoid_repeat_days)); })
+      .then(([m, h]) => { setMemory(m); setHistory(h.outfits); setDays(String(m.preferences.avoid_repeat_days)); setCity(m.preferences.home_city ?? ""); })
       .catch((e: Error) => setError(e.message));
   }, [userId]);
   useEffect(() => { setMemory(null); load(); }, [load]);
 
-  const save = async (patch: { likes?: string[]; dislikes?: string[]; avoid_repeat_days?: number }) => {
+  const save = async (patch: { likes?: string[]; dislikes?: string[]; avoid_repeat_days?: number; home_city?: string }) => {
     if (!memory) return;
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setSaved(false);
     try {
       // A word can't be both liked and disliked: the newest list wins.
       if (patch.likes) patch.dislikes = memory.preferences.dislikes.filter((d) => !patch.likes!.includes(d));
       if (patch.dislikes) patch.likes = (patch.likes ?? memory.preferences.likes).filter((l) => !patch.dislikes!.includes(l));
       const prefs = await api.setPreferences(userId, patch);
       setMemory({ ...memory, preferences: prefs });
+      setDays(String(prefs.avoid_repeat_days));
+      setCity(prefs.home_city ?? "");
+      setSaved(true);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
@@ -85,6 +96,7 @@ export function Preferences({ userId }: { userId: string }) {
       </div>
 
       {error && <div className="notice error" style={{ marginBottom: 16 }}>{error}</div>}
+      {saved && <div className="notice" role="status" style={{ marginBottom: 16 }}>Saved</div>}
 
       {!memory ? (
         !error && <div className="row muted"><span className="spinner" /> Loading</div>
@@ -98,13 +110,30 @@ export function Preferences({ userId }: { userId: string }) {
           </div>
 
           <div className="card panel">
+            <h3>Home city</h3>
+            <form className="row" style={{ flexWrap: "wrap" }}
+              onSubmit={(e) => { e.preventDefault(); save({ home_city: city.trim() }); }}>
+              <input className="input" style={{ width: 240 }} value={city} onChange={(e) => setCity(e.target.value)}
+                placeholder="e.g. Mumbai" aria-label="Home city" maxLength={120} />
+              <button className="btn sm" type="submit" disabled={busy}>Save</button>
+              {memory.preferences.home_city && (
+                <button className="btn ghost sm" type="button" disabled={busy}
+                  onClick={() => save({ home_city: "" })}>Clear</button>
+              )}
+            </form>
+            <p className="small muted" style={{ margin: "12px 0 0" }}>
+              Used for the weather when your question doesn't name a place. Without it, outfits ignore the weather.
+            </p>
+          </div>
+
+          <div className="card panel">
             <h3>Repeats</h3>
             <form className="row" style={{ flexWrap: "wrap" }}
-              onSubmit={(e) => { e.preventDefault(); const n = Number(days); if (n >= 0 && n <= 60) save({ avoid_repeat_days: n }); }}>
+              onSubmit={(e) => { e.preventDefault(); const n = Number(days); if (days !== "" && Number.isInteger(n) && n >= 0 && n <= 60) save({ avoid_repeat_days: n }); else setError("Enter a whole number of days from 0 to 60."); }}>
               <span className="muted">Don't suggest something I've worn within</span>
               <input className="input" style={{ width: 72 }} type="number" min={0} max={60} value={days} onChange={(e) => setDays(e.target.value)} aria-label="Days" />
               <span className="muted">days</span>
-              <button className="btn sm" type="submit" disabled={busy || Number(days) === memory.preferences.avoid_repeat_days}>Save</button>
+              <button className="btn sm" type="submit" disabled={busy}>{busy ? <span className="spinner" /> : null} Save</button>
             </form>
             <p className="small muted" style={{ margin: "12px 0 0" }}>
               {memory.liked_item_ids.length} piece{memory.liked_item_ids.length === 1 ? "" : "s"} rated up,{" "}

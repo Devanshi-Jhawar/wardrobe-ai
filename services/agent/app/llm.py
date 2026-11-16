@@ -13,6 +13,8 @@ import json
 import logging
 import re
 
+import time
+
 import httpx
 
 from . import config
@@ -116,18 +118,50 @@ def chat_json(system: str, user: str, max_tokens: int = 800) -> dict | None:
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
+    if is_reasoning(name):
+        # Reasoning models think before answering and the thinking counts
+        # against max_tokens: keep it short and leave room for the answer, or
+        # the JSON is cut off (Groq then rejects it with a 400).
+        body["reasoning_effort"] = "low"
+        body["max_tokens"] = max_tokens + REASONING_ROOM
     url = f"{config.LLM_BASE_URL}/chat/completions"
     try:
-        r = httpx.post(url, headers=_headers(), json=body, timeout=config.LLM_TIMEOUT)
+        r = _post(url, body)
         if r.status_code == 400 and "response_format" in r.text:
             body.pop("response_format")          # model without JSON mode: ask in prose
-            r = httpx.post(url, headers=_headers(), json=body, timeout=config.LLM_TIMEOUT)
-        r.raise_for_status()
+            r = _post(url, body)
+        if r.status_code >= 400:
+            log.warning("%s call failed: %s %s", config.LLM_PROVIDER, r.status_code, r.text[:300])
+            return None
         content = r.json()["choices"][0]["message"]["content"] or ""
     except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
         log.warning("%s call failed: %s", config.LLM_PROVIDER, exc)
         return None
     return _extract_json(content)
+
+
+REASONING_ROOM = 1024     # extra tokens for a reasoning model's thinking
+RATE_LIMIT_WAIT = 6.0     # wait this long at most for a rate limit to clear, once
+
+
+def is_reasoning(name: str | None) -> bool:
+    """Models that think before answering and accept reasoning_effort."""
+    return bool(name) and config.LLM_PROVIDER == "groq" and "gpt-oss" in name.lower()
+
+
+def _post(url: str, body: dict) -> httpx.Response:
+    """POST once, and once more after a short rate-limit wait (free tiers cap
+    tokens per minute, and one question can make two calls)."""
+    r = httpx.post(url, headers=_headers(), json=body, timeout=config.LLM_TIMEOUT)
+    if r.status_code == 429:
+        try:
+            wait = float(r.headers.get("retry-after") or 2)
+        except ValueError:
+            wait = 2.0
+        if wait <= RATE_LIMIT_WAIT:
+            time.sleep(wait)
+            r = httpx.post(url, headers=_headers(), json=body, timeout=config.LLM_TIMEOUT)
+    return r
 
 
 def status() -> dict:

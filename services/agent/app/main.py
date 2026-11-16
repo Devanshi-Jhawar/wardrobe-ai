@@ -105,6 +105,7 @@ def agent(req: AgentRequest):
             "dates": state.get("dates"),
             "itinerary": state.get("itinerary"),
             "planner": state.get("planner_source"),
+            "composer": state.get("composer_source"),
             "attempts": state.get("attempts"),
             "critic_notes": state.get("critic_notes"),
             "wardrobe_count": len(state.get("wardrobe_items") or []),

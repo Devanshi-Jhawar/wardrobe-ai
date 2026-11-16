@@ -26,6 +26,7 @@ def _prefs_out(prefs) -> PreferencesOut:
         likes=prefs.likes if prefs else [],
         dislikes=prefs.dislikes if prefs else [],
         avoid_repeat_days=crud.avoid_days(prefs),
+        home_city=prefs.home_city if prefs else None,
     )
 
 
@@ -58,7 +59,8 @@ async def get_preferences(user_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.put("/{user_id}/preferences", response_model=PreferencesOut)
 async def set_preferences(user_id: str, payload: PreferencesIn, db: AsyncSession = Depends(get_db)):
-    """Set likes / dislikes / avoid_repeat_days. Fields you leave out are kept."""
+    """Set likes / dislikes / avoid_repeat_days / home_city. Fields you leave out
+    are kept; an empty home_city clears it."""
     prefs = await crud.set_preferences(db, user_id, payload.model_dump(exclude_unset=True))
     return _prefs_out(prefs)
 

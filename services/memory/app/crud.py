@@ -19,7 +19,10 @@ async def set_preferences(db: AsyncSession, user_id: str, changes: dict) -> Pref
         prefs = Preferences(user_id=user_id, likes=[], dislikes=[])
         db.add(prefs)
     for key, value in changes.items():
-        if value is not None:
+        if key == "home_city":
+            # A city name, or blank to clear it.
+            prefs.home_city = (value or "").strip() or None
+        elif value is not None:
             setattr(prefs, key, value)
     await db.commit()
     await db.refresh(prefs)

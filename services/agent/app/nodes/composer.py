@@ -55,6 +55,39 @@ OCCASION_ACCESSORIES.update({
     "sightseeing": ["sunglass", "bag"],
     "travel":      ["bag"],
 })
+# Dress code per occasion: style words that suit it (bonus), and tag groups
+# that clash with it (penalty) when an item is tagged *only* within that group.
+# Without this a sharara tagged wedding/festival could join an office outfit
+# just because it matched the kurti's style.
+FESTIVE_TAGS = {"wedding", "festival", "festive", "party", "sangeet", "reception"}
+CASUAL_TAGS = {"casual", "trip", "beach", "gym", "sports", "loungewear", "summer"}
+GYM_TAGS = {"gym", "sports", "workout", "running"}
+# Footwear and pieces too casual for any dressed-up occasion: worn only when
+# nothing else exists, even if the alternative was worn yesterday.
+NEVER_DRESSY = ("slipper", "flip flop", "flip-flop", "crocs", "track")
+DRESS_CODE = {
+    "office": {"styles": {"formal", "smart", "business", "office", "workwear"},
+               "clash": [(FESTIVE_TAGS, -8), (CASUAL_TAGS, -3)],
+               "never": NEVER_DRESSY + ("shorts",),
+               "formal_layer": True},
+    "wedding": {"styles": {"ethnic", "festive", "traditional", "formal", "embellished"},
+                "clash": [(GYM_TAGS, -8), (CASUAL_TAGS, -3)],
+                "never": NEVER_DRESSY + ("shorts",)},
+    "festival": {"styles": {"ethnic", "festive", "traditional"},
+                 "clash": [(GYM_TAGS, -8), (CASUAL_TAGS, -3)],
+                 "never": NEVER_DRESSY + ("shorts",)},
+    "party": {"styles": {"party", "glam", "evening", "chic", "formal"},
+              "clash": [(GYM_TAGS, -8), (CASUAL_TAGS, -3)],
+              "never": NEVER_DRESSY},
+    "date": {"styles": {"chic", "smart", "party", "evening"},
+             "clash": [(GYM_TAGS, -8)],
+             "never": NEVER_DRESSY},
+}
+STYLE_BONUS = 4
+# Layers that make an outfit formal; worn to the office whatever the weather
+# (offices are air-conditioned), not only when it's cold.
+FORMAL_LAYERS = ("blazer", "waistcoat", "suit")
+
 # Outfits that are traditionally worn with a dupatta.
 DUPATTA_WITH = {"kurti", "kameez", "anarkali", "shalwar", "sharara", "lehenga"}
 
@@ -194,6 +227,32 @@ def _weather_fit(item: dict, sig: dict) -> int:
     return s
 
 
+def _breaks_dress_code(item: dict, occasion: str | None) -> bool:
+    code = DRESS_CODE.get(occasion or "")
+    category = str(item.get("category") or "").lower()
+    return bool(code) and any(w in category for w in code.get("never", ()))
+
+
+def _dress_code_fit(item: dict, occasion: str | None) -> int:
+    """Bonus for a style that suits the occasion's dress code, penalty for an
+    item whose tags say it's only for something else (festive / casual)."""
+    code = DRESS_CODE.get(occasion or "")
+    if not code:
+        return 0
+    s = -10 if _breaks_dress_code(item, occasion) else 0
+    style = str(item.get("style") or "").lower()
+    if any(w in style for w in code["styles"]):
+        s += STYLE_BONUS
+    occ = item.get("occasion")
+    tags = {str(o).lower() for o in (occ if isinstance(occ, list) else [occ] if occ else [])}
+    if tags and not _matches_occasion(item, occasion):
+        for group, penalty in code["clash"]:
+            if tags <= group:
+                s += penalty
+                break
+    return s
+
+
 def _score(item: dict, occasion: str | None, sig: dict, prefs: dict,
            boosts: dict[str, int] | None = None) -> int:
     """Higher = better fit. Used to order candidates for a slot."""
@@ -208,6 +267,7 @@ def _score(item: dict, occasion: str | None, sig: dict, prefs: dict,
     if sig["hot"] and "winter" in seasons:
         s -= 3
     s += _weather_fit(item, sig)
+    s += _dress_code_fit(item, occasion)
     if item.get("is_favorite"):
         s += 2
     if prefs_mod.is_liked(prefs, item):
@@ -229,8 +289,22 @@ def _pick(candidates: list[dict], occasion, sig, prefs: dict, attempt: int,
     "Repeat" = worn within the user's avoid_repeat_days, or already used
     earlier on this trip (`avoid_ids`).
     """
-    if not candidates:
+    pool = _pool(candidates, sig, prefs, avoid_ids, occasion)
+    if not pool:
         return None
+    ordered = sorted(pool, key=lambda it: _score(it, occasion, sig, prefs, boosts), reverse=True)
+    return ordered[attempt % len(ordered)]
+
+
+def _pool(candidates: list[dict], sig, prefs: dict, avoid_ids: set | None = None,
+          occasion: str | None = None) -> list[dict]:
+    """The first non-empty tier of candidates (see `_pick`). Items that break
+    the occasion's dress code (slippers to the office) are tried last."""
+    if not candidates:
+        return []
+    proper = [it for it in candidates if not _breaks_dress_code(it, occasion)]
+    if proper and len(proper) < len(candidates):
+        return _pool(proper, sig, prefs, avoid_ids)
     avoid_ids = avoid_ids or set()
     repeat = lambda it: prefs_mod.recently_worn(prefs, it) or it.get("id") in avoid_ids
     unsuited = lambda it: bool(weather_types_of(it.get("category")) & sig["types_avoid"])
@@ -240,9 +314,31 @@ def _pick(candidates: list[dict], occasion, sig, prefs: dict, attempt: int,
         [it for it in candidates if not repeat(it)],
         candidates,
     ]
-    pool = next(t for t in tiers if t)
-    ordered = sorted(pool, key=lambda it: _score(it, occasion, sig, prefs, boosts), reverse=True)
-    return ordered[attempt % len(ordered)]
+    return next(t for t in tiers if t)
+
+
+def _pick_pair(tops: list[dict], bottoms: list[dict], occasion, sig, prefs: dict,
+               attempt: int, boosts=None, avoid_ids=None) -> tuple[dict | None, dict | None]:
+    """Best top + bottom judged together, rotated by `attempt`.
+
+    Each top is paired with bottoms in its own style (kurti + sharara, shirt +
+    jeans) when the wardrobe has one, else any bottom. Picking the top alone
+    first would let a perfect top drag in a bottom that's wrong for the
+    occasion; scoring the pair lets a better-suited pair win instead.
+    """
+    top_pool = _pool(tops, sig, prefs, avoid_ids, occasion)
+    if not top_pool or not bottoms:
+        return (_pick(tops, occasion, sig, prefs, attempt, boosts, avoid_ids),
+                _pick(bottoms, occasion, sig, prefs, attempt, boosts, avoid_ids))
+    score = lambda it: _score(it, occasion, sig, prefs, boosts)
+    pairs = []
+    for t in top_pool:
+        matching = [b for b in bottoms if _family(b) == _family(t)]
+        for b in _pool(matching or bottoms, sig, prefs, avoid_ids, occasion):
+            pairs.append((score(t) + score(b), t, b))
+    pairs.sort(key=lambda p: p[0], reverse=True)
+    _, top, bottom = pairs[attempt % len(pairs)]
+    return top, bottom
 
 
 def _family(item: dict | None) -> str | None:
@@ -301,22 +397,32 @@ def _compose(buckets, occasion, sig, prefs, attempt, boosts, avoid_ids=None):
     # there's no full top+bottom pair, or when it clearly fits better than both
     # pieces — by an occasion or search match, not by tag noise. Otherwise the
     # separates win.
-    onepiece, top = pick("onepiece"), pick("top")
-    # The bottom matches the top's style (kurti + sharara, t-shirt + jeans) when
-    # the wardrobe has one — even if that means a repeat — else anything goes.
-    bottoms = buckets.get("bottom", [])
-    matching = [b for b in bottoms if _family(b) == _family(top)]
-    bottom = pick("bottom", matching or bottoms)
+    onepiece = pick("onepiece")
+    top, bottom = _pick_pair(buckets.get("top", []), buckets.get("bottom", []),
+                             occasion, sig, prefs, attempt, boosts, avoid_ids)
     score = lambda it: _score(it, occasion, sig, prefs, boosts)
+    breaks = lambda it: _breaks_dress_code(it, occasion)
     used_onepiece = bool(onepiece) and (
         not (top and bottom)
         or score(onepiece) >= max(score(top), score(bottom)) + ONEPIECE_MARGIN
+        # Track pants to a party lose to a dress, whatever the scores say.
+        or (not breaks(onepiece) and (breaks(top) or breaks(bottom)))
     )
     slots = [("onepiece", onepiece)] if used_onepiece else [("top", top), ("bottom", bottom)]
     slots.append(("footwear", pick("footwear")))
     # A layer is part of the outfit only when it's actually cold.
     if sig["cold"]:
         slots.append(("outerwear", pick("outerwear")))
+    formal_layer = None
+    if not sig["cold"] and DRESS_CODE.get(occasion or "", {}).get("formal_layer") and not used_onepiece:
+        # ...or when the occasion is formal and the user owns a blazer. On a hot
+        # day it's carried for the air-conditioned office rather than worn.
+        formal = [it for it in buckets.get("outerwear", [])
+                  if any(w in str(it.get("category") or "").lower() for w in FORMAL_LAYERS)]
+        formal_layer = pick("outerwear", formal) if formal else None
+        if formal_layer and not sig["hot"]:
+            chosen.append(formal_layer)
+            formal_layer = None
     for slot, it in slots:
         if it:
             chosen.append(it)
@@ -324,10 +430,13 @@ def _compose(buckets, occasion, sig, prefs, attempt, boosts, avoid_ids=None):
             missing.append(slot)
 
     extras, carry = _accessories(buckets, chosen, occasion, sig, prefs, attempt, boosts, avoid_ids)
+    if formal_layer:
+        name = str(formal_layer.get("category") or "blazer").lower()
+        carry.append(f"your {name} for the air-conditioned office")
     return chosen + extras, missing, used_onepiece, carry
 
 
-def _rationale(occasion: str | None, sig: dict) -> str:
+def _rationale(occasion: str | None, sig: dict, place: str | None = None) -> str:
     bits = []
     if occasion:
         article = "an" if occasion[0] in "aeiou" else "a"
@@ -337,6 +446,8 @@ def _rationale(occasion: str | None, sig: dict) -> str:
             bits.append(f"highs {sig['temp_min']}–{sig['temp']}°C")
         else:
             bits.append(f"high of {sig['temp']}°C")
+        if place:
+            bits[-1] += f" in {place}"
     if sig["hot"]:
         bits.append("hot, so keep it light")
     if sig["cold"]:
@@ -363,9 +474,56 @@ def day_plans(state: OutfitState) -> dict[int, dict]:
 
 
 def composer(state: OutfitState) -> dict:
+    """Rules draft first; then, in LLM mode and on the first pass only, the LLM
+    stylist picks from the same wardrobe and its checked choice replaces the
+    rules' items. If the critic sends an LLM draft back, the retry is rules."""
+    from .. import config
+    from . import llm_composer
+
+    attempt = int(state.get("attempts") or 0)
+    llm_tried = bool(state.get("llm_used"))
+    # The rules rotate by attempt; after an LLM pass their first try is pass 0.
+    out = _rules_composer(state, attempt - 1 if llm_tried and attempt else attempt)
+    ctx = out.pop("_ctx")
+    if config.MODE != "llm" or llm_tried:
+        out["composer_source"] = "rules"
+        return out
+
+    draft = out["draft_outfit"]
+    rules_days = [d["items"] for d in draft["days"]] if draft.get("days") else [draft["items"]]
+    picks = llm_composer.compose(state, ctx["items"], ctx["buckets"], ctx["days"], ctx["plans"],
+                                 ctx["occasion"], ctx["prefs"], rules_days)
+    out["llm_used"] = True
+    if not picks:
+        out["composer_source"] = "rules"
+        return out
+
+    def missing(chosen):
+        have = {slot_of(it.get("category")) for it in chosen}
+        need = ["footwear"] + ([] if "onepiece" in have else ["top", "bottom"])
+        return [s for s in need if s not in have]
+
+    if draft.get("days"):
+        packing: dict = {}
+        for day, pick in zip(draft["days"], picks):
+            day["items"], day["note"] = pick["items"], pick["note"]
+            day["missing_slots"] = missing(pick["items"])
+            for it in pick["items"]:
+                packing.setdefault(it.get("id") or id(it), it)
+        draft["items"] = list(packing.values())
+        draft["missing_slots"] = list(dict.fromkeys(s for d in draft["days"] for s in d["missing_slots"]))
+        draft["used_onepiece"] = any(slot_of(it.get("category")) == "onepiece" for it in draft["items"])
+    else:
+        draft["items"], draft["note"] = picks[0]["items"], picks[0]["note"]
+        draft["missing_slots"] = missing(picks[0]["items"])
+        draft["used_onepiece"] = any(slot_of(it.get("category")) == "onepiece" for it in draft["items"])
+    out["composer_source"] = "llm"
+    return out
+
+
+def _rules_composer(state: OutfitState, attempt: int) -> dict:
     occasion = state.get("occasion")
     prefs = state.get("prefs") or {}
-    attempt = int(state.get("attempts") or 0)
 
     # Drop anything the user has told us they dislike (words or thumbs-down).
     items = [it for it in (state.get("wardrobe_items") or [])
@@ -373,19 +531,23 @@ def composer(state: OutfitState) -> dict:
     boosts = _search_boosts(state.get("search_scores"), state.get("search_text"), items)
     buckets = group_by_slot(items)
     overall = _weather_signal(state.get("weather"))
+    place = (state.get("weather") or {}).get("place") if overall["temp"] is not None else None
+    place = ", ".join(str(place).split(", ")[:2]) if place else None   # "Manali, Himachal Pradesh"
 
     days = _trip_days(state) if state.get("intent") == "trip" else []
     plans = day_plans(state)
+    ctx = {"items": items, "buckets": buckets, "plans": plans, "prefs": prefs,
+           "occasion": occasion, "days": days if len(days) >= 2 else (days or [{}])[:1]}
     if len(days) < 2:
         occasion = (plans.get(1) or {}).get("occasion") or occasion
         chosen, missing, used_onepiece, carry = _compose(
             buckets, occasion, overall, prefs, attempt, boosts)
-        return {"draft_outfit": {
+        return {"_ctx": ctx, "draft_outfit": {
             "items": chosen,
             "used_onepiece": used_onepiece,
             "missing_slots": missing,
             "carry": carry,
-            "rationale": _rationale(occasion, overall),
+            "rationale": _rationale(occasion, overall, place),
             "weather_signal": overall,
         }}
 
@@ -426,13 +588,13 @@ def composer(state: OutfitState) -> dict:
             carry_all.append(a)
     if trip.get("needs_evening_layer") and not overall["cold"]:
         carry_all.append("a light layer for the evenings")
-    return {"draft_outfit": {
+    return {"_ctx": ctx, "draft_outfit": {
         "items": list(packing.values()),        # packing list: each item once
         "days": plan,
         "used_onepiece": any(slot_of(it.get("category")) == "onepiece" for it in packing.values()),
         "missing_slots": missing_all,
         "carry": carry_all,
-        "rationale": _rationale(occasion, overall),
+        "rationale": _rationale(occasion, overall, place),
         "weather_signal": overall,
     }}
 

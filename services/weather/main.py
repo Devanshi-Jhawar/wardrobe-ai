@@ -12,8 +12,11 @@ MAX_DAYS_AHEAD = 16  # Open-Meteo only forecasts this far ahead
 # Places the open geocoder resolves poorly. Goa is an Indian state, not a city,
 # so the geocoder has no "Goa" in India and fuzzy-matches "Genoa, Italy" instead.
 # Coordinates match this service's own default lat/lon.
+# Manali: the most populated match is a Chennai suburb in Tamil Nadu, not the
+# hill town in Himachal Pradesh that travellers mean.
 CITY_OVERRIDES = {
     "goa": (15.2993, 74.1240, "Goa, India"),
+    "manali": (32.2432, 77.1892, "Manali, Himachal Pradesh, India"),
 }
 
 
@@ -55,7 +58,9 @@ def find_city(name):
 
     exact = [r for r in results if r.get("name", "").lower() == key]
     best = max(exact or results, key=lambda r: r.get("population") or 0)
-    return best["latitude"], best["longitude"], f"{best['name']}, {best.get('country', '')}".strip(", ")
+    # Name the state too ("Manali, Tamil Nadu, India"), so a wrong match is visible.
+    label = ", ".join(p for p in (best.get("name"), best.get("admin1"), best.get("country")) if p)
+    return best["latitude"], best["longitude"], label
 
 
 def temperature_label(high):

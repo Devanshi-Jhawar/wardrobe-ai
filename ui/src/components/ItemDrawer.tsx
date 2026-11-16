@@ -97,7 +97,7 @@ export function ItemDrawer({ userId, item, onClose, onSaved, onDeleted }: {
           <div className="drawer-img"><ItemImage userId={userId} id={item.id} thumb={false} alt={draft.category || "Item"} /></div>
 
           <div className="row" style={{ flexWrap: "wrap" }}>
-            <span className={`tag ${item.status === "ready" ? "" : item.status === "failed" ? "danger" : "warn"}`}>{item.status}</span>
+            <span className={`tag ${item.status === "ready" ? "" : item.status === "failed" ? "danger" : "warn"}`}>{capitalize(item.status)}</span>
             {typeof conf === "number" && <span className="tag">Detected at {Math.round(conf * 100)}%</span>}
             {item.attributes?.low_confidence ? <span className="tag warn">Check the category</span> : null}
             <span className="small muted">Worn {item.wear_count} time{item.wear_count === 1 ? "" : "s"}

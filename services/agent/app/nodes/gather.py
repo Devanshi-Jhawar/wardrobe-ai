@@ -100,12 +100,19 @@ def gather(state: OutfitState) -> dict:
         if vec:
             search_scores = clients.search_wardrobe(user_id, vec, k=len(items))
 
-    weather = clients.fetch_weather(city, days=days, start_date=start) if days else None
     prefs = prefs_mod.from_memory(clients.fetch_memory(user_id))
+
+    # Weather needs a place: the one asked about, else the user's home city.
+    # With neither, skip it rather than let the weather service fall back to
+    # its built-in default location and report a stranger's temperature.
+    weather_source = "asked" if city else "home" if prefs.get("home_city") else None
+    city = city or prefs.get("home_city")
+    weather = clients.fetch_weather(city, days=days, start_date=start) if days and city else None
 
     return {
         "wardrobe_items": items,
         "search_scores": search_scores,
         "weather": weather,
+        "weather_source": weather_source,
         "prefs": prefs,
     }

@@ -26,3 +26,14 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_add_missing_columns)
+
+
+def _add_missing_columns(conn) -> None:
+    """create_all makes new tables but never alters existing ones; add columns
+    introduced after a database was first created (until Alembic is set up)."""
+    from sqlalchemy import inspect, text
+
+    have = {c["name"] for c in inspect(conn).get_columns("preferences")}
+    if "home_city" not in have:
+        conn.execute(text("ALTER TABLE preferences ADD COLUMN home_city VARCHAR(120)"))

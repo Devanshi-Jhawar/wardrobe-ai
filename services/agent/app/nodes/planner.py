@@ -243,14 +243,18 @@ def _strip_itinerary(q: str) -> str:
 # ------------------------------------------------------------------ LLM ---
 
 INTENTS = {"recommend", "trip", "gap", "save_preference"}
+# Does the request name a calendar date? ("dec 20", "20th", "20/12", "2026-12-20")
+_CALENDAR_DATE = re.compile(
+    r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b"
+    r"|\b\d{1,2}(?:st|nd|rd|th)\b|\b\d{1,2}[/-]\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b")
 
 LLM_SYSTEM = """You read requests sent to a personal wardrobe stylist app and return JSON only.
 
 Fields:
 - intent: "recommend" (what to wear), "trip" (several days or packing), "gap" (what to buy, what is missing), or "save_preference" (the user states a like or dislike, e.g. "I don't like frocks").
-- occasion: one of {occasions}, or null. For a trip whose days differ, null here and set per day.
+- occasion: one of {occasions}, or null. For a trip whose days differ, null here and set per day. A named festival or wedding wins over a generic word ("Diwali party" is "festival").
 - city: the place the outfit is for, as a city name a weather service can find (e.g. "Goa", "Shimla"), or null.
-- dates: {{"relative": one of {relative} or a weekday name, or null; "start_date": "YYYY-MM-DD" or null; "count": number of days or null}}. Today is {today} ({weekday}). Resolve explicit dates ("Dec 20", "the 24th") to start_date. A trip with no length given but a day-by-day plan has count = its last day.
+- dates: {{"relative": one of {relative} or a weekday name, or null; "start_date": "YYYY-MM-DD" or null; "count": number of days or null}}. Today is {today} ({weekday}). For words like tomorrow, a weekday or a weekend, set "relative" and leave start_date null; do not work out the date yourself. Use start_date only for calendar dates ("Dec 20", "the 24th"), using this calendar: {calendar}. A trip with no length given but a day-by-day plan has count = its last day.
 - search_text: only the words describing particular clothes the user wants to wear (colours, garment names, styles), e.g. "red saree". null when no clothes are named.
 - preference_kind: "like" or "dislike" (only for save_preference), else null.
 - preferences: the liked or disliked things as short lowercase words, e.g. ["frocks"], ["yellow", "orange"]. Empty list otherwise.
@@ -328,9 +332,20 @@ def merge_llm(data: dict, rules: dict) -> dict:
     out = {"intent": intent}
     out["occasion"] = (_clean_occasion(data["occasion"]) if "occasion" in data
                        else rules.get("occasion"))
+    # A named festival or wedding sets the dress code, even when the user says
+    # "party" ("Diwali party", "wedding reception party"): the model sometimes
+    # picks the generic word.
+    if rules.get("occasion") in ("festival", "wedding") and out["occasion"] in (None, "party", "casual"):
+        out["occasion"] = rules["occasion"]
     city = data.get("city")
     out["city"] = city.strip() if isinstance(city, str) and city.strip() else rules.get("city")
     out["dates"] = _clean_dates(data.get("dates"), rules.get("dates") or {})
+    # A start date the user never wrote ("next weekend" worked out by the model)
+    # loses to the rules' relative day, which gather resolves exactly.
+    rule_rel = (rules.get("dates") or {}).get("relative")
+    if out["dates"].get("start") and rule_rel and not _CALENDAR_DATE.search(rules.get("_q", "")):
+        out["dates"].pop("start")
+        out["dates"]["relative"] = rule_rel
     st = data.get("search_text")
     out["search_text"] = (st.strip().lower() or None) if isinstance(st, str) else \
         (None if "search_text" in data else rules.get("search_text"))
@@ -350,6 +365,8 @@ def llm_planner(state: OutfitState, rules: dict) -> dict | None:
         occasions=", ".join(f'"{o}"' for o in OCCASION_KEYWORDS),
         relative=", ".join(f'"{r}"' for r in RELATIVE_DAYS),
         today=today.isoformat(), weekday=today.strftime("%A"),
+        calendar=", ".join(f"{(today + timedelta(days=i)).strftime('%a %d %b')} = "
+                           f"{(today + timedelta(days=i)).isoformat()}" for i in range(1, 22)),
     )
     data = llm.chat_json(system, state.get("query") or "")
     if not data:

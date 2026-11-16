@@ -17,6 +17,17 @@ def _describe(item: dict) -> str:
     return " ".join(p for p in parts if p) or "item"
 
 
+def _weather_info(state: OutfitState) -> dict:
+    """Where the temperature came from, so the UI can say so (or say why
+    there is none: no place was asked about and no home city is saved)."""
+    weather = state.get("weather")
+    place = (weather or {}).get("place")
+    return {"weather_place": ", ".join(str(place).split(", ")[:2]) if place else None,
+            "weather_source": state.get("weather_source") if weather else None,
+            "weather_missing": "no_city" if not weather and not state.get("weather_source")
+                               else "unavailable" if not weather else None}
+
+
 def answer(state: OutfitState) -> dict:
     intent = state.get("intent", "recommend")
 
@@ -67,6 +78,8 @@ def answer(state: OutfitState) -> dict:
     if chosen:
         outfit_line = ", ".join(_describe(it) for it in chosen)
         msg = f"Here's an outfit: {outfit_line}."
+        if draft.get("note"):
+            msg += f" {draft['note']}"
         if draft.get("rationale"):
             msg += f" ({draft['rationale']})"
     else:
@@ -82,10 +95,12 @@ def answer(state: OutfitState) -> dict:
     return {"final_answer": {
         "type": "recommendation",
         "message": msg,
+        "note": draft.get("note"),
         "outfit": [_item_out(it) for it in chosen],
         "item_ids": [it.get("id") for it in chosen if it.get("id")],
         "carry": carry,
         "rationale": draft.get("rationale"),
+        **_weather_info(state),
         "critic_notes": state.get("critic_notes"),
         "attempts": state.get("attempts", 0),
         "suggestions": gaps,
@@ -132,10 +147,11 @@ def _trip_answer(state: OutfitState, draft: dict, gaps: list[dict]) -> dict:
                   "occasion": d.get("occasion"), "activity": d.get("activity"),
                   "outfit": [_item_out(it) for it in d["items"]],
                   "item_ids": [it.get("id") for it in d["items"] if it.get("id")],
-                  "rationale": d.get("rationale")} for d in days],
+                  "rationale": d.get("rationale"), "note": d.get("note")} for d in days],
         "packing_list": [_item_out(it) for it in packing],
         "carry": draft.get("carry") or [],
         "rationale": draft.get("rationale"),
+        **_weather_info(state),
         "critic_notes": state.get("critic_notes"),
         "attempts": state.get("attempts", 0),
         "suggestions": gaps,

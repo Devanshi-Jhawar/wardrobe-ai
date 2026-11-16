@@ -26,6 +26,7 @@ def empty_prefs(available: bool = False) -> dict:
         "disliked_item_ids": [],
         "recently_worn_item_ids": [],
         "avoid_repeat_days": None,
+        "home_city": None,
     }
 
 
@@ -42,6 +43,7 @@ def from_memory(memory: dict | None) -> dict:
         "disliked_item_ids": list(memory.get("disliked_item_ids") or []),
         "recently_worn_item_ids": list(memory.get("recently_worn_item_ids") or []),
         "avoid_repeat_days": p.get("avoid_repeat_days"),
+        "home_city": (p.get("home_city") or "").strip() or None,
     }
 
 

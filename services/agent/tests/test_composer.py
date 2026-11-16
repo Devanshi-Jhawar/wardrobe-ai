@@ -188,3 +188,79 @@ def test_bottom_matches_top_style(wardrobe, days_from):
             assert c & ethnic_bottoms, f"day {day['day']} pairs an ethnic top with {c}"
         if c & {"Shirt", "T-Shirt"}:
             assert not c & ethnic_bottoms, f"day {day['day']} pairs a western top with {c}"
+
+
+# --- office dress code: festive or beachy pieces lose to smart ones ---
+
+OFFICE_CLOSET = [
+    item("kurti", "Kurti", color=["green"], occasion=["casual", "office"], style="ethnic"),
+    item("sharara", "Sharara", color=["purple"], occasion=["festival", "wedding"], style="ethnic"),
+    item("shirt", "Shirt", color=["white"], occasion=["office", "casual"], style="smart casual"),
+    item("jeans", "Jeans", color=["navy"], occasion=["casual", "trip"], style="casual"),
+    item("shoes", "Shoes", color=["brown"], occasion=["office"]),
+]
+
+
+def test_office_avoids_festive_bottom():
+    draft = compose(OFFICE_CLOSET, weather_reply(weather_day(HOT)), occasion="office")
+    assert "Sharara" not in cats(draft)
+    assert {"Shirt", "Jeans"} <= set(cats(draft))
+
+
+def test_office_takes_tailored_trousers_when_owned():
+    closet = OFFICE_CLOSET + [item("trousers", "Trousers", color=["black"], occasion=["office"], style="formal")]
+    draft = compose(closet, weather_reply(weather_day(MILD)), occasion="office")
+    assert "Trousers" in cats(draft)
+
+
+def test_office_blazer_worn_when_mild_carried_when_hot():
+    closet = OFFICE_CLOSET + [item("blazer", "Blazer", color=["navy"], occasion=["office"], style="formal")]
+    mild = compose(closet, weather_reply(weather_day(MILD)), occasion="office")
+    assert "Blazer" in cats(mild)
+    hot = compose(closet, weather_reply(weather_day(HOT)), occasion="office")
+    assert "Blazer" not in cats(hot)
+    assert any("blazer" in c for c in hot["carry"])
+
+
+def test_dress_code_only_for_office():
+    party = compose(OFFICE_CLOSET, weather_reply(weather_day(MILD)), occasion="festival")
+    assert "Sharara" in cats(party)
+
+
+def test_office_repeats_shoes_rather_than_wearing_slippers():
+    closet = OFFICE_CLOSET + [item("slippers", "Slippers", color=["grey"], occasion=["casual"])]
+    prefs = P.empty_prefs(True)
+    prefs["recently_worn_item_ids"] = ["shoes"]
+    draft = compose(closet, weather_reply(weather_day(MILD)), occasion="office", prefs=prefs)
+    assert "Shoes" in cats(draft) and "Slippers" not in cats(draft)
+    casual = compose(closet, weather_reply(weather_day(MILD)), occasion="casual", prefs=prefs)
+    assert "Slippers" in cats(casual)
+
+
+WEDDING_CLOSET = [
+    item("lehenga", "Lehenga", color=["red"], occasion=["wedding"], style="ethnic"),
+    item("slippers", "Slippers", color=["grey"], occasion=["casual"]),
+    item("heels", "Heels", color=["gold"], occasion=["party", "wedding"]),
+    item("tee", "T-Shirt", color=["white"], occasion=["casual"]),
+    item("joggers", "Track Pants", color=["black"], occasion=["gym"]),
+]
+
+
+def test_dressy_occasions_skip_slippers_even_if_heels_were_just_worn():
+    prefs = P.empty_prefs(True)
+    prefs["recently_worn_item_ids"] = ["heels"]
+    for occ in ("wedding", "festival", "party", "date"):
+        draft = compose(WEDDING_CLOSET, weather_reply(weather_day(MILD)), occasion=occ, prefs=prefs)
+        assert "Slippers" not in cats(draft), occ
+        assert "Track Pants" not in cats(draft), occ
+
+
+def test_slippers_used_when_nothing_else_and_fine_for_casual():
+    only = [it for it in WEDDING_CLOSET if it["id"] != "heels"]
+    assert "Slippers" in cats(compose(only, weather_reply(weather_day(MILD)), occasion="wedding"))
+    assert "Slippers" in cats(compose(only, weather_reply(weather_day(MILD)), occasion="casual"))
+
+
+def test_blazer_rule_stays_office_only():
+    closet = OFFICE_CLOSET + [item("blazer", "Blazer", color=["navy"], occasion=["office"], style="formal")]
+    assert "Blazer" not in cats(compose(closet, weather_reply(weather_day(MILD)), occasion="party"))
