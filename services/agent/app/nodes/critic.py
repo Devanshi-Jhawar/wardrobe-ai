@@ -33,23 +33,28 @@ def critic(state: OutfitState) -> dict:
     unfixable_missing = [s for s in missing
                          if s in CORE_SLOTS and not buckets.get(s)]
 
-    # Occasion fit.
-    occasion_ok = True
-    if occasion and chosen:
-        occasion_ok = any(_matches_occasion(it, occasion) for it in chosen)
-    has_alternatives = bool(occasion) and any(
-        _matches_occasion(it, occasion)
-        for slot in CORE_SLOTS for it in buckets.get(slot, [])
-    )
+    # Occasion fit: per day on a trip (each day may have its own occasion),
+    # else for the one outfit. Only a failure if the wardrobe has something
+    # that would fit — otherwise retrying can't help.
+    def owns_fit(occ):
+        return any(_matches_occasion(it, occ)
+                   for slot in CORE_SLOTS + ["onepiece"] for it in buckets.get(slot, []))
+
+    checks = ([(d.get("occasion"), d.get("items") or [], f"day {d.get('day')}")
+               for d in draft["days"]] if draft.get("days")
+              else [(occasion, chosen, None)])
+    misfits = [(occ, where) for occ, its, where in checks
+               if occ and its and not any(_matches_occasion(it, occ) for it in its)
+               and owns_fit(occ)]
 
     notes = []
     good = True
     if fixable_missing:
         good = False
         notes.append(f"missing {', '.join(fixable_missing)} but wardrobe has options")
-    if not occasion_ok and has_alternatives:
+    for occ, where in misfits:
         good = False
-        notes.append(f"nothing chosen really fits a {occasion} occasion")
+        notes.append(f"nothing chosen{' for ' + where if where else ''} really fits a {occ} occasion")
     if unfixable_missing:
         notes.append(f"wardrobe has no {', '.join(unfixable_missing)} (gap)")
 

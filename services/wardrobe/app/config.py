@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "sqlite+aiosqlite:///./wardrobe.db"
+    # Vector size of the embedding service (both its backends emit 512).
+    embedding_dim: int = 512
     storage_dir: Path = Path("./storage")
 
     # Enrichment (vision + embedding). Off until those services exist.

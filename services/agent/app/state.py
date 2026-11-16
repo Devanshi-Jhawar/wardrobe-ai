@@ -21,6 +21,8 @@ class OutfitState(TypedDict, total=False):
     preferences: list[str]     # the individual things: ["yellow", "orange"]
     preference_kind: str | None  # "like" | "dislike"
     search_text: str | None    # what the user said about the clothes, e.g. "red saree"
+    itinerary: list[dict]      # trips: [{"day": 1, "occasion": "beach", "activity": "..."}]
+    planner_source: str        # "llm" | "rules": who read the request
 
     # --- written by: gather ---
     wardrobe_items: list[dict]

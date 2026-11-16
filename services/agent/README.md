@@ -26,8 +26,44 @@ planner ─► (preference?) ─► remember ─► answer
 | `remember` | Saves likes / dislikes ("no frocks", "I love blue") to the **memory** service. |
 | `answer`   | Shapes the final human-readable + structured reply. |
 
-`planner` and `composer` are **rules-based** today (no API key needed). Their
-signatures are frozen so an LLM version can drop in later via `AGENT_MODE=llm`.
+## Planner: Grok or rules
+
+With `XAI_API_KEY` set, `AGENT_MODE` defaults to `llm`: the planner sends the
+request to Grok (xAI's OpenAI-compatible chat API, `app/llm.py`) and gets back
+the same fields as JSON (intent, occasion, city, dates incl. explicit start
+dates, search words, likes/dislikes, per-day itinerary). Every field is
+validated; anything missing or invalid comes from the rules planner, and if
+the call fails entirely the rules answer is used. `XAI_MODEL` pins a model;
+left empty, the agent picks a fast Grok text model from your account's
+`/models` list. `/agent` replies show `debug.planner` = `llm` or `rules`.
+
+Without a key everything runs on rules, as before. The composer, critic and
+gap stay rules-based (fast, explainable, testable).
+
+## Trip itineraries
+
+"4 day trip to Goa: day 1 beach, day 2 wedding, last day flight home" gives
+`itinerary = [{day, occasion, activity}]` (rules handle "day 1", "2nd day",
+"third day", "last day"; Grok handles freer phrasing). Each day is dressed
+for its own occasion against its own forecast, the critic checks each day,
+and days past the 16-day forecast are still planned (without weather).
+Trip activities map onto wardrobe tags: beach / sightseeing / travel read
+`trip` and `casual` items, hiking reads `trip` and `sports`.
+
+## Suggestions (gap node)
+
+Each suggestion has a `kind`, `title`, `reason`, `rule` and a shopping
+`search_link`:
+
+| kind | When |
+|------|------|
+| `missing` | a core slot the wardrobe can't fill at all |
+| `occasion` | you own the slot, but nothing in it suits the occasion (per day on trips) |
+| `weather` | gear the forecast asks for that you don't own (raincoat, scarf) |
+| `complement` | a piece that finishes the chosen look, in a matching colour (white juttis with a yellow kurti) |
+| `coverage` | shopping questions: occasions you can't dress yet |
+
+Disliked words are never suggested; at most 6 per answer.
 
 ## Run
 
@@ -143,7 +179,13 @@ skipped unless nothing else fits the slot.
 | POST | `/wear`     | `{item_ids, user_id, worn_on?, occasion?, city?, note?}` | Log an outfit as worn. 400 for a future date, 503 if memory is down. |
 | POST | `/rate`     | `{item_ids, liked, user_id, reason?}` | Thumbs up / down. |
 | POST | `/feedback` | `{dislike?, like?, user_id}` | Remember a like / dislike word directly. |
-| GET  | `/wardrobe` | `?user_id=` | The user's wardrobe (proxied). |
+| GET  | `/wardrobe` | `?user_id=` | The user's wardrobe (proxied), each item with its outfit `slot`. |
+
+Gateway routes (`app/gateway.py`), so a browser only needs the agent:
+`POST /wardrobe/items` (upload), `GET|PATCH|DELETE /wardrobe/items/{id}`,
+`POST /wardrobe/items/{id}/enrich` (re-run vision), `GET /wardrobe/items/{id}/image?thumb=`,
+`GET /memory`, `PUT /memory/preferences`, `GET /memory/history`,
+`DELETE /memory/worn/{entry_id}` (all take `?user_id=`).
 
 `/agent` answers have a `type`: `recommendation` (`outfit`, `item_ids`,
 `carry`, `suggestions`), `trip_plan` (`days[]` each with `outfit` +
@@ -168,5 +210,7 @@ each service still agree on their APIs (they create a random memory user).
 
 `WARDROBE_URL`, `WEATHER_URL`, `MEMORY_URL` (`http://localhost:8006`),
 `EMBED_URL` (`http://localhost:8003`), `VISION_URL`, `AGENT_PORT` (8000),
-`AGENT_MODE` (`rules`), `AGENT_MAX_ATTEMPTS` (3), `AGENT_HTTP_TIMEOUT` (10 s),
+`XAI_API_KEY`, `XAI_MODEL` (empty = auto), `XAI_BASE_URL`, `AGENT_LLM_TIMEOUT` (30 s),
+`AGENT_MODE` (`llm` when a key is set, else `rules`), `AGENT_CORS_ORIGINS`,
+`AGENT_MAX_ATTEMPTS` (3), `AGENT_HTTP_TIMEOUT` (10 s),
 `AGENT_EMBED_TIMEOUT` (30 s — CLIP on CPU can be slow on its first call).

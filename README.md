@@ -17,6 +17,51 @@ The project is built as small, independent services (phase 1):
 Phase 2 adds the **Agent** (block 6, port 8000): a LangGraph brain that takes a
 plain request ("what do I wear to office tomorrow in Goa?") and orchestrates
 the services above into an outfit. See [Block 6](#block-6-agent-service).
+Phase 3 adds the **UI** (port 8080), the **Grok LLM planner**, **Postgres +
+pgvector**, and Docker Compose to run it all with one command.
+
+## Quick start: everything in Docker
+
+You need **Docker Desktop** only. Postgres runs in a container, so there is
+nothing else to install.
+
+```bash
+git lfs pull                     # the vision model (best.pt)
+copy .env.example .env           # Windows   (cp on macOS / Linux)
+# open .env and set XAI_API_KEY=... for the Grok planner (optional)
+docker compose up --build        # first build takes a while (PyTorch for vision)
+```
+
+| Open | What |
+|------|------|
+| http://localhost:8080 | The app: stylist chat, wardrobe, preferences |
+| http://localhost:8000/docs | The agent API (the gateway the UI uses) |
+| http://localhost:8001/docs ... 8006/docs | Each service on its own |
+
+Data lives in Docker volumes: `pgdata` (Postgres: wardrobe + memory databases)
+and `uploads` (clothing photos). `docker compose down` keeps them;
+`docker compose down -v` deletes them.
+
+Without Docker, each service still runs on its own with SQLite (see each block
+below), and the UI runs with `cd ui && npm install && npm run dev`
+(http://localhost:5173, forwarding `/api` to the agent on 8000).
+
+## The UI (`ui/`)
+
+React + Vite + TypeScript, dark theme. Three pages:
+
+- **Stylist**: chat with the agent. Outfits show as photo cards with the
+  weather reasoning, "I'm wearing this" (logs a wear), Like / Not for me
+  (thumbs up / down), and suggestions with shopping links. Trips show a card
+  per day (forecast, that day's occasion, the outfit) plus a packing list.
+- **Wardrobe**: upload photos (drag and drop, several at once; each is tagged
+  by vision), filter by slot, open a piece to fix its tags, favourite it,
+  re-analyse it, or remove it.
+- **Preferences**: likes and dislikes, the no-repeat window, wear history.
+
+The **Profile** box (bottom left) is the `user_id`; switch it to keep separate
+wardrobes. The status panel shows which services and which planner are live.
+The UI only talks to the agent; nginx (Docker) or Vite (dev) forwards `/api`.
 
 ---
 
@@ -185,5 +230,13 @@ uvicorn app.main:app --port 8000
 
 Then open **http://127.0.0.1:8000/docs** and try `POST /agent` with
 `{"query": "what should I wear to office tomorrow in Goa?", "user_id": "u1"}`.
+
+**Grok planner:** set `XAI_API_KEY` (in `.env` for Docker, or the environment)
+and the planner asks Grok to read the request, falling back to the rules if
+the call fails. Without a key it uses the rules. `GET /health` shows which.
+
+**Trips with a plan per day:** "4 day trip to Goa: day 1 beach, day 2 wedding,
+day 3 sightseeing, day 4 flight home" dresses each day for its own occasion
+against that day's forecast.
 
 Full explanation: [`services/agent/README.md`](services/agent/README.md).

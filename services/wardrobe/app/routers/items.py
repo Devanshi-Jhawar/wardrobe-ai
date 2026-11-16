@@ -1,6 +1,8 @@
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import clients, crud
@@ -80,6 +82,42 @@ async def get_item(item_id: str, user_id: str = Query(...), db: AsyncSession = D
     return item
 
 
+@router.get("/{item_id}/image")
+async def get_image(item_id: str, user_id: str = Query(...), thumb: bool = False,
+                    db: AsyncSession = Depends(get_db)):
+    """The item's photo (or its thumbnail) as a PNG."""
+    item = await crud.get_item(db, item_id, user_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    path = Path((item.thumbnail_url if thumb and item.thumbnail_url else item.image_url) or "")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Image file missing")
+    return FileResponse(path, media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=86400"})
+
+
+@router.post("/{item_id}/enrich", response_model=ItemOut)
+async def enrich_item(item_id: str, user_id: str = Query(...), db: AsyncSession = Depends(get_db)):
+    """Run vision + embedding again on a stored photo (for pending / failed items).
+
+    Overwrites the vision-made tags; the item is `ready` on success."""
+    item = await crud.get_item(db, item_id, user_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    path = Path(item.image_url or "")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Image file missing")
+    raw = path.read_bytes()
+    try:
+        vision = await clients.analyze_image(raw, path.name)
+        embedding = await clients.embed_image(raw, path.name)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Vision or embedding service failed: {exc}")
+    changes = {k: v for k, v in vision.items() if k in _ENRICHABLE}
+    changes.update(embedding=embedding, status="ready")
+    return await crud.update_item(db, item, changes)
+
+
 @router.patch("/{item_id}", response_model=ItemOut)
 async def update_item(
     item_id: str,
@@ -90,7 +128,11 @@ async def update_item(
     item = await crud.get_item(db, item_id, user_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    return await crud.update_item(db, item, payload.model_dump(exclude_unset=True))
+    changes = payload.model_dump(exclude_unset=True)
+    # Tagging a pending / failed item by hand makes it usable.
+    if item.status != "ready" and (changes.get("category") or item.category):
+        changes["status"] = "ready"
+    return await crud.update_item(db, item, changes)
 
 
 @router.delete("/{item_id}", status_code=204)

@@ -20,8 +20,18 @@ HTTP_TIMEOUT = float(os.getenv("AGENT_HTTP_TIMEOUT", "10"))
 # Text embedding can be slow the first time CLIP runs on CPU.
 EMBED_TIMEOUT = float(os.getenv("AGENT_EMBED_TIMEOUT", "30"))
 
-# "rules" = no LLM, runs with no API key (current). "llm" = use a model (later).
-MODE = os.getenv("AGENT_MODE", "rules")
+# "llm" = the planner asks Grok (xAI) to read the request, falling back to the
+# rules on any failure. "rules" = no LLM at all. Default: llm when a key is set.
+XAI_API_KEY = os.getenv("XAI_API_KEY", "").strip()
+XAI_BASE_URL = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1").rstrip("/")
+XAI_MODEL = os.getenv("XAI_MODEL", "").strip()     # empty = pick from xAI's model list
+LLM_TIMEOUT = float(os.getenv("AGENT_LLM_TIMEOUT", "30"))
+MODE = os.getenv("AGENT_MODE", "llm" if XAI_API_KEY else "rules")
+
+# Browser origins allowed to call the API directly (the UI normally goes
+# through its own proxy, so this only matters for other front ends).
+CORS_ORIGINS = [o.strip() for o in os.getenv(
+    "AGENT_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 
 # The critic may ask the composer to try again at most this many times.
 MAX_ATTEMPTS = int(os.getenv("AGENT_MAX_ATTEMPTS", "3"))

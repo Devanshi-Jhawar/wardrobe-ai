@@ -78,8 +78,6 @@ def answer(state: OutfitState) -> dict:
     if gaps:
         msg += "\n\nTo complete the look, consider:\n- " + \
                "\n- ".join(g["suggestion"] for g in gaps)
-    if chosen:
-        msg += "\n\nWearing it? Send these item ids to POST /wear so I don't repeat it too soon."
 
     return {"final_answer": {
         "type": "recommendation",
@@ -96,7 +94,8 @@ def answer(state: OutfitState) -> dict:
 
 def _item_out(it: dict) -> dict:
     return {"id": it.get("id"), "category": it.get("category"),
-            "color": it.get("color"), "image_url": it.get("image_url")}
+            "color": it.get("color"), "style": it.get("style"),
+            "image_url": it.get("image_url")}
 
 
 def _trip_answer(state: OutfitState, draft: dict, gaps: list[dict]) -> dict:
@@ -113,6 +112,9 @@ def _trip_answer(state: OutfitState, draft: dict, gaps: list[dict]) -> dict:
         if d.get("rainy"):
             weather.append("rain")
         head = f"Day {d['day']} · {format_day(d)}" + (f" ({', '.join(weather)})" if weather else "")
+        plan = d.get("activity") or d.get("occasion")
+        if plan and plan != state.get("occasion"):
+            head += f" for {plan}"
         outfit = ", ".join(_describe(it) for it in d["items"]) or "nothing suitable in your wardrobe"
         lines.append(f"- {head}: {outfit}")
     packing = draft.get("items") or []
@@ -127,6 +129,7 @@ def _trip_answer(state: OutfitState, draft: dict, gaps: list[dict]) -> dict:
         "message": "\n".join(lines),
         "days": [{"day": d["day"], "date": d.get("date"), "label": d.get("label"),
                   "max": d.get("max"), "min": d.get("min"), "rainy": d.get("rainy"),
+                  "occasion": d.get("occasion"), "activity": d.get("activity"),
                   "outfit": [_item_out(it) for it in d["items"]],
                   "item_ids": [it.get("id") for it in d["items"] if it.get("id")],
                   "rationale": d.get("rationale")} for d in days],

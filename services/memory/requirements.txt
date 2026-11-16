@@ -5,3 +5,4 @@ aiosqlite>=0.20
 pydantic>=2.11
 pydantic-settings>=2.6
 httpx>=0.28
+asyncpg>=0.30

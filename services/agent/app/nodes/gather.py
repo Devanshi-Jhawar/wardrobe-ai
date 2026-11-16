@@ -30,12 +30,22 @@ def date_window(dates: dict, today: date | None = None) -> tuple[date, int]:
     "this week"              -> today through Sunday
     "next week"              -> next Monday through Sunday
     anything else            -> today, 1 day
+
+    A count can combine with a start: {"count": 4, "relative": "saturday"} or
+    {"count": 4, "start": "2026-12-20"} is 4 days from that day.
     """
     today = today or date.today()
     if not dates:
         return today, 1
     if "count" in dates:
-        return today, max(1, int(dates["count"]))
+        count = max(1, int(dates["count"]))
+        rest = {k: v for k, v in dates.items() if k != "count"}
+        return (date_window(rest, today)[0] if rest else today), count
+    if dates.get("start"):
+        try:
+            return max(date.fromisoformat(dates["start"]), today), 1
+        except ValueError:
+            return today, 1
 
     rel = dates.get("relative")
     if rel == "tomorrow":

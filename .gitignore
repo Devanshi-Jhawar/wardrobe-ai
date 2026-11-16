@@ -21,3 +21,6 @@ services/*/storage/
 .DS_Store
 __MACOSX/
 Thumbs.db
+
+# UI build output
+ui/dist/

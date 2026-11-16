@@ -8,16 +8,24 @@ Endpoints:
   POST /rate      — thumbs up / down on a suggested outfit or item
   POST /feedback  — remember a like / dislike word directly ("frocks", "blue")
   GET  /wardrobe  — surface the user's wardrobe (proxied from the wardrobe service)
+
+Plus the pass-through routes in gateway.py (upload, edit, delete, images,
+memory), so the UI only needs to reach this one service.
 """
 from datetime import date
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
-from . import clients, config
+from . import clients, config, gateway, llm
 from .graph import run_agent
+from .slots import slot_of
 
-app = FastAPI(title="Wardrobe AI — Agent", version="0.2.0")
+app = FastAPI(title="Wardrobe AI — Agent", version="0.3.0")
+app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS,
+                   allow_methods=["*"], allow_headers=["*"])
+app.include_router(gateway.router)
 
 
 # --- request bodies ---
@@ -73,6 +81,7 @@ def health():
     return {
         "status": "ok",
         "mode": config.MODE,
+        "llm": llm.status(),
         "services": {
             "wardrobe": clients.ping(config.WARDROBE_URL),
             "vision":   clients.ping(config.VISION_URL),
@@ -94,6 +103,8 @@ def agent(req: AgentRequest):
             "occasion": state.get("occasion"),
             "city": state.get("city"),
             "dates": state.get("dates"),
+            "itinerary": state.get("itinerary"),
+            "planner": state.get("planner_source"),
             "attempts": state.get("attempts"),
             "critic_notes": state.get("critic_notes"),
             "wardrobe_count": len(state.get("wardrobe_items") or []),
@@ -162,4 +173,8 @@ def feedback(req: FeedbackRequest):
 def wardrobe(user_id: str = "demo", limit: int = 200):
     """Show the user's wardrobe (proxied from the wardrobe service)."""
     items = clients.fetch_wardrobe(user_id, limit=limit)
+    # The outfit slot of each item (top, bottom, onepiece, footwear, outerwear,
+    # accessory, or None if untagged), so a UI can group without its own map.
+    for it in items:
+        it["slot"] = slot_of(it.get("category"))
     return {"user_id": user_id, "count": len(items), "items": items}

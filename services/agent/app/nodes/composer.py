@@ -42,6 +42,19 @@ OCCASION_ACCESSORIES = {
     "date":     ["jewel", "earring", "bag"],
     "office":   ["bag", "watch"],
 }
+# Trip activities aren't occasion tags the vision service writes; these are
+# the tags that suit them instead (vision tags trip-friendly items "trip").
+OCCASION_TAGS = {
+    "beach":       {"beach", "trip", "casual", "summer"},
+    "hiking":      {"hiking", "trip", "sports", "gym"},
+    "sightseeing": {"trip", "casual"},
+    "travel":      {"trip", "casual"},
+}
+OCCASION_ACCESSORIES.update({
+    "beach":       ["sunglass", "cap", "hat", "bag"],
+    "sightseeing": ["sunglass", "bag"],
+    "travel":      ["bag"],
+})
 # Outfits that are traditionally worn with a dupatta.
 DUPATTA_WITH = {"kurti", "kameez", "anarkali", "shalwar", "sharara", "lehenga"}
 
@@ -112,7 +125,7 @@ def _matches_occasion(item: dict, occasion: str | None) -> bool:
     occ = item.get("occasion")
     tags = [str(o).lower() for o in occ] if isinstance(occ, list) else \
            [occ.lower()] if isinstance(occ, str) else []
-    synonyms = set(OCCASION_KEYWORDS.get(occasion, []))
+    synonyms = set(OCCASION_KEYWORDS.get(occasion, [])) | OCCASION_TAGS.get(occasion, set())
     # The occasion itself may sit inside a longer tag ("office wear"); synonyms
     # must match a whole tag, so "work" doesn't match a "workout" item.
     return any(occasion in t or t in synonyms for t in tags)
@@ -336,12 +349,17 @@ def _rationale(occasion: str | None, sig: dict) -> str:
 
 
 def _trip_days(state: OutfitState) -> list[dict]:
-    """The days to plan: the forecast's days, or N blank days if weather is down."""
-    days = (state.get("weather") or {}).get("days") or []
-    if days:
-        return days
-    count = int((state.get("dates") or {}).get("count") or 1)
-    return [{} for _ in range(count)]
+    """The days to plan: the forecast's days, then blank days for any the
+    forecast doesn't reach (weather down, or beyond its 16 days)."""
+    days = list((state.get("weather") or {}).get("days") or [])
+    count = int((state.get("dates") or {}).get("count") or 0)
+    count = max(count, max((d["day"] for d in state.get("itinerary") or []), default=0))
+    return days + [{} for _ in range(max(0, count - len(days)))] if (days or count) else []
+
+
+def day_plans(state: OutfitState) -> dict[int, dict]:
+    """{day number: itinerary entry} for the trip's per-day plans."""
+    return {int(d["day"]): d for d in state.get("itinerary") or [] if d.get("day")}
 
 
 def composer(state: OutfitState) -> dict:
@@ -357,7 +375,9 @@ def composer(state: OutfitState) -> dict:
     overall = _weather_signal(state.get("weather"))
 
     days = _trip_days(state) if state.get("intent") == "trip" else []
+    plans = day_plans(state)
     if len(days) < 2:
+        occasion = (plans.get(1) or {}).get("occasion") or occasion
         chosen, missing, used_onepiece, carry = _compose(
             buckets, occasion, overall, prefs, attempt, boosts)
         return {"draft_outfit": {
@@ -374,7 +394,9 @@ def composer(state: OutfitState) -> dict:
     used_ids: set = set()
     for i, day in enumerate(days):
         sig = _day_signal(day) if day else _empty_signal()
-        chosen, missing, _, carry = _compose(buckets, occasion, sig, prefs, attempt,
+        plan_i = plans.get(i + 1) or {}
+        day_occasion = plan_i.get("occasion") or occasion
+        chosen, missing, _, carry = _compose(buckets, day_occasion, sig, prefs, attempt,
                                              boosts, avoid_ids=used_ids)
         # Clothes shouldn't repeat across the trip if avoidable; accessories may.
         used_ids |= {it["id"] for it in chosen
@@ -390,9 +412,11 @@ def composer(state: OutfitState) -> dict:
             "max": day.get("max"),
             "min": day.get("min"),
             "rainy": day.get("rainy"),
+            "occasion": day_occasion,
+            "activity": plan_i.get("activity"),
             "items": chosen,
             "missing_slots": missing,
-            "rationale": _rationale(None, sig),
+            "rationale": _rationale(plan_i.get("occasion"), sig),
         })
     trip = (state.get("weather") or {}).get("trip") or {}
     for a in trip.get("accessories") or []:

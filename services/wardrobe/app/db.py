@@ -25,4 +25,7 @@ async def init_db() -> None:
     from . import models  # noqa: F401  (ensure models are registered)
 
     async with engine.begin() as conn:
+        if conn.dialect.name == "postgresql":
+            from sqlalchemy import text
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)

@@ -5,7 +5,11 @@ and the vision classes come from the real data.yaml, so a change in either
 service breaks these tests instead of silently breaking the agent.
 """
 import importlib.util
+import os
 import re
+
+# The fast tests never call Grok, even if XAI_API_KEY is set in the shell.
+os.environ["AGENT_MODE"] = "rules"
 import sys
 from datetime import date, timedelta
 from pathlib import Path

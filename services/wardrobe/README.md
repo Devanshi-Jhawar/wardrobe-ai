@@ -47,10 +47,16 @@ curl "http://localhost:8001/wardrobe/items?user_id=u1&category=Shirt&occasion=of
 
 ## Notes / next steps
 
-- **DB:** SQLite by default for zero-setup dev. Set `DATABASE_URL` to Postgres later.
-  Tables are auto-created on startup — add Alembic before moving to Postgres.
-- **Embeddings:** stored as JSON; search is brute-force cosine. On Postgres, migrate
-  the `embedding` column to `pgvector` and swap `/search` to an indexed `<=>` query.
+- **DB:** SQLite by default for zero-setup dev; Postgres in Docker
+  (`DATABASE_URL=postgresql+asyncpg://...`, see the root `docker-compose.yml`).
+  Tables are auto-created on startup; add Alembic before changing columns on a
+  database that already holds data.
+- **Embeddings:** on Postgres the column is pgvector `vector(512)` and `/search`
+  orders by `<=>` (cosine distance) in the database; on SQLite it's a JSON list
+  with brute-force cosine. Same API either way.
+- **Images:** `GET /wardrobe/items/{id}/image?user_id=&thumb=true` serves the photo;
+  `POST /wardrobe/items/{id}/enrich` re-runs vision + embedding on a pending or
+  failed item. Tagging a pending item by hand (PATCH with a category) marks it ready.
 - **Enrichment:** set `ENABLE_ENRICHMENT=true` and point `VISION_SERVICE_URL` /
   `EMBEDDING_SERVICE_URL` at those services once they exist. Upload then fills
   attributes + embedding automatically and marks items `ready`.
